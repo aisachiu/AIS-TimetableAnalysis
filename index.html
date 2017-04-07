@@ -1,0 +1,132 @@
+<html ng-app="myApp" ng-controller="myCtrl">
+  <head>
+    <base target="_top">
+    <link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons1.css">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap.min.css">
+    
+    <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.6.2/angular.min.js"></script>
+  </head>
+  <body>
+  <div class="head-container"><div class="header" id="fixed-head"></div></div>
+    <div class="container" >
+    
+   <!-- NAV BAR -->
+    <nav class="navbar navbar-default">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1" aria-expanded="false">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="#">Brand</a>
+    </div>
+    <!-- Collect the nav links, forms, and other content for toggling -->
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="active"><a href="#" ng-click="toggleOutput()">Output <span class="sr-only">(current)</span></a></li>
+        <li><a href="#">Link</a></li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">Dropdown <span class="caret"></span></a>
+          <ul class="dropdown-menu">
+            <li><a href="#">Action</a></li>
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left">
+        <div class="form-group">
+          <input type="text" class="form-control" placeholder="Search">
+        </div>
+        <button type="submit" class="btn btn-default">Submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="#">Link</a></li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">Dropdown <span class="caret"></span></a>
+          <ul class="dropdown-menu">
+            <li><a href="#">Action</a></li>
+            <li><a href="#">Another action</a></li>
+            <li><a href="#">Something else here</a></li>
+            <li role="separator" class="divider"></li>
+            <li><a href="#">Separated link</a></li>
+          </ul>
+        </li>
+      </ul>
+    </div><!-- /.navbar-collapse -->
+  </nav>
+      <div>
+        <div><label>Output<input type="checkbox" ng-model="tabs.output" /></label>  
+        <label>Timetable<input type="checkbox" ng-model="tabs.timetable" /></label>  
+        <label>Analysis<input type="checkbox" ng-model="tabs.analysis" /></label>
+        
+        
+        </div>
+        <p><button ng-click="runIt();">Run!</button></p>
+        <p><button ng-click="getSingleLines();">Get Single Lines</button></p>
+        <p><button ng-click="checkSingleLineCombos();">checkSingleLineCombos</button></p>
+        <p><button ng-click="showScope();">Show Scope in Console</button></p>
+        <p>Output:</p>
+        
+        <!-- Output tab -->
+        <div class="col-md-12" ng-show="tabs.output">
+          <ul>
+            <li ng-repeat="x in output track by $index">{{x}}</li>
+          </ul>
+        </div><!-- end output tab -->
+        
+        <!-- student analysis tab -->
+        <div class="col-md-12" ng-show="tabs.analysis">
+          <div class="row">
+            <div></div>
+              <table class="table">
+                <tr ng-repeat="val in data.doneSs | orderBy: 'bestNum'" ng-class="{'success':(val.valid && val.solved), 'warning': !val.solved}">
+                  <td class="col-md-5" ><h3>{{val['Last Name']}} {{val['Given Name']}} - {{val['HRM']}}<span class="glyphicon glyphicon-ok" ng-show="val.valid"></span><span class="glyphicon glyphicon-thumbs-up" ng-show="val.solved"></span></h3>
+                  <br>{{sid}}
+                  <br>Requests:{{val.URID}}</td>
+                  
+                  <td class="col-md-7"><span class="small" ng-repeat="combo in val.combos">{{combo}} | </span>
+                      <br>Number of combos:{{val.combos.length}}
+                      <br>Most number of courses that fit: {{val.bestNum}}
+                  </td>
+                </tr>
+              </table>
+            <div></div>
+          </div>
+        </div><!-- end analysis tab -->
+        
+                <!-- student analysis tab -->
+        <div class="col-md-12" ng-show="tabs.timetable">
+          <div class="row">
+            <table class="table">
+              <!-- repeating row for timetableFormat -->
+              <tr ng-repeat="(key, row) in data.timetableFormat">
+                <td>{{key}}</td>
+                <td ng-repeat="col in row">
+                  <div ng-repeat="course in data.tt" ng-if="(course[6] == key) && (course[3] == col)">{{course[8]}} {{course[4]}}({{course[5]}})
+                    Edit: <button ng-click="prepareThis($index)"/>
+                    
+                    
+                  </div>
+                </td>
+              </tr>
+              <!-- end repeating -->
+            </table>
+          </div>
+        </div><!-- end analysis tab -->
+        
+        </div>
+      </div>
+ 
+<?!= include("Script"); ?>
+<!--
+<div class="form" ng-show="ttEdit[$index]">
+                      Course: {{course[6]}}<select class="form-control" ng-model="course[6]" ng-options="x for x in data.courselist" ></select> 
+                      <label>Section: <input type="text" ng-model="course[7]" /></label><br>
+                      <label>Teacher: <input type="text" ng-model="course[9]"/></label><br>
+                      <label>Room: <input type="text" ng-model="course[10]" /></label><br>
+                      <label>BLOCK: <input type="number" ng-model="course[11]" /></label>
+                      <button ng-click="updateThis($index)" /></div> <!-->
+  </body>
+</html>
+
+

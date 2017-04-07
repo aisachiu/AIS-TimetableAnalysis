@@ -1,0 +1,363 @@
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
+  <script src="//code.jquery.com/ui/1.11.4/jquery-ui.js"></script>
+<script>
+
+
+
+//Angular
+var app = angular.module('myApp', []);
+
+
+app.service("myService", ['$rootScope', function($rootScope){
+  var g = {data: 'gold', showdata: true};
+  function showD(data){  
+    g.data = data;
+    $rootScope.$broadcast('hereNow', g);
+  }
+  
+  //google.script.run.withSuccessHandler(showData).loadGInfo();
+  return g;
+}]);
+
+
+app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
+    $scope.data = {} ;
+    $scope.start = 0;
+    $scope.end = 5;
+    $scope.output = [];
+    $scope.problems = [];
+    $scope.tabs = { output: true, analysis: false, timetable: true};
+    $scope.toggleTabs = function (tab){
+      for(var t in $scope.tabs){
+        if (t == tab) {
+          $scope.tabs[t] = true; 
+        } else {
+          $scope.tabs[t] = false;
+        }
+      }
+    }
+    
+    $scope.editClass = { old: [], update: [], index:0};
+    $scope.logClassChange = [];
+    
+    $scope.clashes = [];
+    
+    $scope.analysisTab = { filter: "!!"};
+    
+    $scope.$on('hereNow', function(event, data){
+      $scope.data = data.data;
+    });
+    
+    function showData(x){
+      $scope.data = x;
+      createTimtableView();
+      $scope.$digest();
+      console.log($scope);
+    }
+      
+    function savedData(x){
+      console.log("done!");
+    }
+    
+    $scope.runIt = function(){
+      console.log("Run!");
+      var ssData = $scope.data.studentObj;
+      var ivData = $scope.data.invalidRequests;
+      $scope.data.doneSs = [];
+      $scope.data.urids = {};
+      $scope.clashes = [];
+      
+      fitTheseRequests(ssData, "Valid");
+      fitTheseRequests(ivData, "Invalid");
+
+      //var sO = JSON.stringify($scope.data.studentObj);
+      //google.script.run.saveStudentObject(sO);
+    }
+    
+    function fitTheseRequests(ssData, grptitle){
+      var doneSs = $scope.data.doneSs;
+      //if (doneSs == undefined) doneSs = [];
+      //var doneSs = $scope.data.studentObj;
+      var keys = $scope.data.urids;
+      var total = 0;
+      var found = 0;
+      $scope.output.push(grptitle);
+      for (var i in ssData ){ //for each student
+        var myObj = {};
+        myObj = ssData[i];
+        myObj.done = false; 
+        myObj.matches = 0;
+        myObj.combos = [];
+        
+        console.log(ssData[i]);
+        $scope.output.push("checking " + ssData[i]['Student ID'] +": " + ssData[i]['UniqueRequestsID']);
+
+        if(ssData[i].choices.length > 0) {
+          var dataFound = [];
+          //Note and check keys
+          if(keys.hasOwnProperty(ssData[i]['UniqueRequestsID'])) { //this combo already exists
+            dataFound = keys[ssData[i]['UniqueRequestsID']].combos;
+          } else {
+            keys[ssData[i]['UniqueRequestsID']] = { count: 0, students: [], combos: []};
+            $scope.tempProblems = [];
+            dataFound = recursion2(ssData[i].choices.slice(0));
+            keys[ssData[i]['UniqueRequestsID']].combos = dataFound;
+          }
+          
+          keys[ssData[i]['UniqueRequestsID']].count++;
+          keys[ssData[i]['UniqueRequestsID']].students.push(ssData[i]['Student ID']);
+          $scope.output.push(dataFound);
+          total++;
+          myObj.done = true;
+          myObj.URID = ssData[i]['UniqueRequestsID'];
+          myObj.matches = dataFound.length;
+          if (dataFound.length > 0) {//matches were found
+            found++;
+            myObj.combos = dataFound.slice(0);
+            myObj.solved = true;
+            myObj.bestNum = dataFound[0].reduce(function (ttl, x){return ttl + (x !== "")},0);
+          } else {
+            myObj.solved = false;
+            $scope.problems.push($scope.tempProblems.slice(0));
+            if($scope.tempProblems.length > 0){
+              var prb = $scope.tempProblems.length-1;
+              var max = $scope.tempProblems[prb].reduce(function (ttl, x){return ttl + (x !== "")},0); //counts how many non blank spaces
+              var bestChoices = [];
+              //bestChoices.push($scope.tempProblems[prb]);
+              var current = 0;
+              while ((max > current) && (prb > 0)) {
+                bestChoices.push($scope.tempProblems[prb].slice(0));
+                prb--;
+                current = $scope.tempProblems[prb].reduce(function (ttl, x){return ttl + (x !== "")},0);
+              }
+              myObj.combos = bestChoices.slice(0);
+              myObj.bestNum = max;
+            }
+          }
+        }
+        doneSs.push(myObj);
+        //if (x > $scope.end) break;
+      }
+      $scope.output.push(found +" / "+total +" = " +(found/total*100));
+      console.log($scope);
+    }
+    
+    function fitTheseRequestsBAK(ssData, grptitle){
+      var doneSs = $scope.data.doneSs;
+      //var doneSs = $scope.data.studentObj;
+      var keys = $scope.data.urids;
+      var total = 0;
+      var found = 0;
+      $scope.output.push(grptitle);
+      for (var i in ssData ){ //for each student
+        if(!doneSs.hasOwnProperty(ssData[i]['Student ID'])){
+          doneSs[ssData[i]['Student ID']] = ssData[i];
+          doneSs[ssData[i]['Student ID']].done = false; 
+          doneSs[ssData[i]['Student ID']].matches = 0;
+          doneSs[ssData[i]['Student ID']].combos = [];
+        }
+        console.log(ssData[i]);
+        $scope.output.push("checking " + ssData[i]['Student ID'] +": " + ssData[i]['UniqueRequestsID']);
+
+        if(ssData[i].choices.length > 0) {
+          var dataFound = [];
+          //Note and check keys
+          if(keys.hasOwnProperty(ssData[i]['UniqueRequestsID'])) { //this combo already exists
+            dataFound = keys[ssData[i]['UniqueRequestsID']].combos;
+          } else {
+            keys[ssData[i]['UniqueRequestsID']] = { count: 0, students: [], combos: []};
+            $scope.tempProblems = [];
+            dataFound = recursion2(ssData[i].choices.slice(0));
+            keys[ssData[i]['UniqueRequestsID']].combos = dataFound;
+          }
+          
+          keys[ssData[i]['UniqueRequestsID']].count++;
+          keys[ssData[i]['UniqueRequestsID']].students.push(ssData[i]['Student ID']);
+          $scope.output.push(dataFound);
+          total++;
+          doneSs[ssData[i]['Student ID']].done = true;
+          doneSs[ssData[i]['Student ID']].URID = ssData[i]['UniqueRequestsID'];
+          doneSs[ssData[i]['Student ID']].matches = dataFound.length;
+          if (dataFound.length > 0) {//matches were found
+            found++;
+            doneSs[ssData[i]['Student ID']].combos = dataFound.slice(0);
+            doneSs[ssData[i]['Student ID']].solved = true;
+            doneSs[ssData[i]['Student ID']].bestNum = dataFound[0].reduce(function (ttl, x){return ttl + (x !== "")},0);
+          } else {
+            doneSs[ssData[i]['Student ID']].solved = false;
+            $scope.problems.push($scope.tempProblems.slice(0));
+            if($scope.tempProblems.length > 0){
+              var prb = $scope.tempProblems.length-1;
+              var max = $scope.tempProblems[prb].reduce(function (ttl, x){return ttl + (x !== "")},0); //counts how many non blank spaces
+              var bestChoices = [];
+              //bestChoices.push($scope.tempProblems[prb]);
+              var current = 0;
+              while ((max > current) && (prb > 0)) {
+                bestChoices.push($scope.tempProblems[prb].slice(0));
+                prb--;
+                current = $scope.tempProblems[prb].reduce(function (ttl, x){return ttl + (x !== "")},0);
+              }
+              doneSs[ssData[i]['Student ID']].combos = bestChoices.slice(0);
+              doneSs[ssData[i]['Student ID']].bestNum = max;
+            }
+          }
+        }
+
+        //if (x > $scope.end) break;
+      }
+      $scope.output.push(found +" / "+total +" = " +(found/total*100));
+      console.log($scope);
+    }
+    
+    
+    //This function recursively goes through classes for the student choices and returns an array of classes that fit the timetable or a blank array if it doesn't fit.
+    function recursion2(courseObj){ 
+      var returnVal = [];
+      var current = courseObj.pop();
+      var combinations = courseObj.length > 0 ? recursion2(courseObj) : [["", "", "","","","",""]];
+      for (var section in current.courseSections){
+        var sectionBlock = current.courseSections[section].block;
+        for (var combo in combinations){
+          var thisCombo = combinations[combo].slice(0);
+          //$scope.output.push("checking " + current.courseSections[section].class);
+          var conflict = false;
+          for (var bl = 1; bl <= 7; bl++){
+            if (bl == sectionBlock) {
+              if (thisCombo[bl-1] != ""){
+                //$scope.output.push("Conflict found!");
+                conflict = true;
+                var clashCode = thisCombo[bl-1]+current.courseSections[section].class;
+                if( !$scope.clashes.hasOwnProperty(clashCode)) { $scope.clashes[clashCode] = 0};
+                $scope.clashes[clashCode]++;
+                break;
+              } else {
+                thisCombo[bl-1] = current.courseSections[section].class;
+                //$scope.output.push(current.courseSections[section].class + "  was OK!");
+              }
+            }
+          }
+          if (!conflict) {
+            returnVal.push(thisCombo);
+          } else {
+            $scope.tempProblems.push(thisCombo) }
+        }
+      }
+      //console.log(returnVal);
+      return returnVal;
+   }
+   
+   $scope.showScope = function(){
+     console.log($scope);
+   }
+   
+   $scope.getSingleLines = function(){
+     var result = {};
+     var courseObj = $scope.data.courseObj;
+     
+     //loop through courseObj
+     for (var course in courseObj){
+       if(courseObj[course].hasOwnProperty("classSections")){
+         if(courseObj[course].classSections.length <= 1){
+           result[course] = courseObj[course];
+         }
+       }
+       console.log("Done get Single Lines");
+     }
+     
+     $scope.data.filteredCourses = result;
+   }
+  
+   $scope.checkSingleLineCombos = function(){
+     var studentObj = $scope.data.studentObj;
+     var filteredCourses = $scope.data.filteredCourses;
+     var allCombos = {};
+     
+     for (var s in studentObj){
+       var myCombos = [];
+       for (var c in studentObj[s].choices) { //for each choice this student has
+          
+         if(filteredCourses.hasOwnProperty(studentObj[s].choices[c].course)){
+           myCombos.push(studentObj[s].choices[c].course);
+         }
+       }
+       console.log(myCombos);
+       //find all combinations
+       myCombos.sort();
+       for (var i = 0; i < myCombos.length; i++) {
+          for (var j = i + 1; j < myCombos.length; j++) {
+            var id = myCombos[i] + "_"+ myCombos[j];// do something with pair (i,j)
+            if(!allCombos.hasOwnProperty(id)) allCombos[id] = 0;
+            allCombos[id]++;   
+            console.log(allCombos);
+          }
+       }  
+     }
+     $scope.data.oneLineCombos = allCombos;
+     console.log("Done get Single Line combos");
+   };
+   
+   $scope.writeOneLineCombos = function(){
+     writeData();
+   }
+   
+   function allCombosOfClasses = function(){
+     var thisSs = $scope.data.doneSs[0];
+     console.log("checking "+ thisSs['Student ID']);
+     var mc = thisSs.choices;
+     
+   }
+   
+   function createTimtableView(){
+      var rows = [0,1,2,3,4,5,6,7];
+      var rowIndx = 0;
+      var cols = [1,2,3,4,5];
+      var colIndx = 1;
+      var timetableFormat = [];
+      for (var r=0; r < rows.length; r++){
+        //var thisRow = { row: rows[r]};
+        var thisRow = [];
+        for (var c=0; c < cols.length; c++){
+          //thisRow[c] = cols[c];
+          thisRow.push(cols[c]);
+        }
+        timetableFormat[rows[r]] = thisRow
+        //timetableFormat.push(thisRow);
+      }
+      
+      var tt = $scope.data.tt;
+      var ttEdit = [];
+      for(var t in tt){
+        ttEdit.push(false);
+      }
+      
+      var crs = $scope.data.courseObj;
+      var courselist = [];
+      for (var c in crs){
+        courselist.push(c);
+      }
+      
+      $scope.data.timetableFormat = timetableFormat;
+      $scope.data.ttEdit = ttEdit;
+      $scope.data.courselist = courselist;
+      console.log("timetable draw done!")
+   }
+   
+   $scope.prepareThis = function(i){
+     $scope.editClass.old = $scope.data.tt[i];
+     $scope.editClass.update = $scope.data.tt[i];
+     $scope.editClass.index = i;
+   }
+   
+   $scope.updateThis = function(i){
+     console.log(i);
+     console.log($scope.data.tt[i]);
+   }
+
+   function writeData(){
+     google.script.run.withSuccessHandler(savedData).saveThisObject($scope.data.oneLineCombos);
+   }
+
+   google.script.run.withSuccessHandler(showData).uridFromTimetable();
+    
+});
+</script>
