@@ -79,7 +79,7 @@ function uridFromTimetable(){
  
   var tempTT = cpSS.getSheetByName(myClassSectionDefnSheet).getDataRange().getValues();
   Logger.log(tempTT);
-  var myTT = ss2Obj(tempTT,8,0);
+  var myTT = ss2Obj(tempTT,9,0);
   var courseDefn = cpSS.getSheetByName(courseDefnSheet).getDataRange().getValues();
   var fourYears = [{year: 9, prop:"G9"},{year: 10, prop:"G10"}, {year: 11, prop:"G11"},{year: 12, prop:"G12"}]; //The 4 years in the 4-year plan and the column in courseDefn that contains info about whether course is in that yeargroup's plan.
   var blocks = [1,2,3,4,5,6,7];
@@ -87,17 +87,7 @@ function uridFromTimetable(){
   
   //Create an object of courses
   var courseObj = ss2Obj(courseDefn, 1,0);
-  //Add classes from timetable to course Object
-  for (var class in myTT){ //Loop through class section data
-   if(courseObj.hasOwnProperty(myTT[class].COURSEID)){ //If class is found in courseObj
-     var thisCourse = courseObj[myTT[class].COURSEID];
-     if(!thisCourse.hasOwnProperty("classSections")) { //Create a class sections property and push the class to it
-       thisCourse["classSections"] = [myTT[class]];
-     } else {
-       thisCourse["classSections"].push(myTT[class]);
-     }
-   }
-  }
+
   
   //create an object for 4-year plan combinations of options
   var fourYearPlan = {}
@@ -118,42 +108,13 @@ function uridFromTimetable(){
   }
   
   var ssResults = ss2Obj(rsSS.getSheetByName("Valid Requests").getDataRange().getValues(),0,0);
+  var invalidRequests = ss2Obj(rsSS.getSheetByName("Problem Requests").getDataRange().getValues(),0,0);  
+
+  var transcripts = SpreadsheetApp.openById(myListDocID).getSheetByName(myCreditsSheetName).getDataRange().getValues();
   
-  //add course choices object to student object per student
-  for (var s in ssResults){
-    var myChoices = ssResults[s].UniqueRequestsID.split(",");
-    ssResults[s].choices = [];
-    ssResults[s].valid = true;
-    for (var myCourse in myChoices){
-      if (courseObj.hasOwnProperty(myChoices[myCourse])){
-        var pushObj= {course: myChoices[myCourse], courseSections: []};
-        var myClasses = courseObj[myChoices[myCourse]].classSections;
-        for (var sec in myClasses){
-          pushObj.courseSections.push({class: myClasses[sec]['SECTIONCODE'], block: myClasses[sec]['BLOCK']});
-        }
-        ssResults[s].choices.push(pushObj);
-      }
-    }
-  }
+  var results = SpreadsheetApp.openById(mySurveyCollector).getSheetByName(mySurveySheetName).getDataRange().getValues();
   
-  var invalidRequests = ss2Obj(rsSS.getSheetByName("Problem Requests").getDataRange().getValues(),0,0);
-  for (var s in invalidRequests){
-    var myChoices = invalidRequests[s].UniqueRequestsID.split(",");
-    invalidRequests[s].choices = [];
-    invalidRequests[s].valid = false;
-    for (var myCourse in myChoices){
-      if (courseObj.hasOwnProperty(myChoices[myCourse])){
-        var pushObj= {course: myChoices[myCourse], courseSections: []};
-        var myClasses = courseObj[myChoices[myCourse]].classSections;
-        for (var sec in myClasses){
-          pushObj.courseSections.push({class: myClasses[sec]['SECTIONCODE'], block: myClasses[sec]['BLOCK']});
-        }
-        invalidRequests[s].choices.push(pushObj);
-      }
-    }
-  }
-  
-  return {courseObj: courseObj, studentObj: ssResults, timetableObj: myTT, fourYearPlan: fourYearPlan, tt: tempTT, invalidRequests: invalidRequests};
+  return {courseObj: courseObj, studentObj: ssResults, timetableObj: myTT, fourYearPlan: fourYearPlan, tt: tempTT, invalidRequests: invalidRequests, thisUser: thisUser, transcripts: transcripts, savedResults: results};
   
 }
 
@@ -181,6 +142,25 @@ function saveThisObject(obj) {
   SpreadsheetApp.getActiveSpreadsheet().insertSheet().getRange(1,1,saveData.length, saveData[0].length).setValues(saveData);
 }
 
+function saveThisArray(saveData){
+  SpreadsheetApp.getActiveSpreadsheet().insertSheet().getRange(1,1,saveData.length, saveData[0].length).setValues(saveData);
+}
+
+// saveNewTT makes a copy of the old timetable and writes the new timetable data to the course planner timetable sheet.
+function saveNewTT(tt){
+  //Make backup of old TT
+  var plannerSheet = SpreadsheetApp.openById(myCoursePlannerDocId).getSheetByName(myClassSectionDefnSheet);
+  var analysisSheet = SpreadsheetApp.getActive();
+  var oldTTdata = plannerSheet.getDataRange().getValues();
+  var bakSheetName = "timetable " + new Date();
+  analysisSheet.insertSheet(bakSheetName).getRange(1, 1, oldTTdata.length, oldTTdata[0].length).setValues(oldTTdata);
+  
+  //clear and write new tt
+  plannerSheet.clear();
+  plannerSheet.getRange(1, 1, tt.length, tt[0].length).setValues(tt);
+  
+  return uridFromTimetable();
+}
 
 function spliceCheck(){
   var courseKey = ["A","B","C"]; 
@@ -299,7 +279,7 @@ function groupValidSsRequests() {
   //Get all student data
   var allStudentInfo = listSS.getSheetByName(myStudentDataSheetName).getDataRange().getValues();
   var studentInfo = ArrayLib.filterByValue(allStudentInfo, 7, true);
-
+  Logger.log(studentInfo);
 //Get all request data  
   var requests = surveySS.getSheetByName(myRequestsSheetName).getDataRange().getValues();
   
@@ -308,7 +288,7 @@ function groupValidSsRequests() {
   myOutput.push(["Student ID","Student Email","HRM","Given Name","Last Name","TotalRequests","UniqueRequestsID","ENGCredits","MathCredits","ScienceCredits","HumanitiesCredits","World Language","PE Credits","VPA Credits","CS Credits","Elective Credits","MAC5C"]);  
   myProblemOutput.push(["Student ID","Student Email","HRM","Given Name","Last Name","TotalRequests","UniqueRequestsID","ENGCredits","MathCredits","ScienceCredits","HumanitiesCredits","World Language","PE Credits","VPA Credits","CS Credits","Elective Credits","MAC5C","Unapproved Classes","Problem - Unapproved","Not enough Credits"]);
   
-  var startRow = 72;
+  var startRow = 0;
   var requestsObject = createRequestsObject(requests, requestActiveCol); //Puts all requests into an object, Student IDs as keys, requests as arrays under the studentID.
     
   for (var s = startRow; s < studentInfo.length ; s++){

@@ -22,11 +22,14 @@ app.service("myService", ['$rootScope', function($rootScope){
 
 app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
     $scope.data = {} ;
+    $scope.dataFetching = true;
     $scope.start = 0;
     $scope.end = 5;
+    $scope.maxClashes = 2;
     $scope.output = [];
     $scope.problems = [];
-    $scope.tabs = { output: true, analysis: false, timetable: true};
+    $scope.tabs = { timetable: false, allocate: true, analysis: false, quotas:false, clashes: false};
+    $scope.createTimetableHRMList = "HRM11-1,HRM11-2,HRM11-3,HRM11-4,HRM10-1,HRM10-2,HRM10-3,HRM10-4,HRM09-1,HRM09-2,HRM09-3,HRM09-4,HRM08-D,HRM08-P,HRM08-T";
     $scope.toggleTabs = function (tab){
       for(var t in $scope.tabs){
         if (t == tab) {
@@ -37,12 +40,25 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
       }
     }
     
-    $scope.editClass = { old: [], update: [], index:0};
+    $scope.dashboard = {};
+    
+    $scope.ttHighlight = {on: true, room: null, teacher: null, course: null};
+    $scope.analysisView = { All: true, Valid: false, Choicetable: true, Solved: true};
+    
+    $scope.setHighlight = function(member, value){
+      if ($scope.ttHighlight[member] == value){
+        $scope.ttHighlight[member] = null;
+      } else {
+        $scope.ttHighlight[member] = value;
+      }
+    }
+    $scope.editClass = { old: [], update: [], index:0, editing: false};
     $scope.logClassChange = [];
     
     $scope.clashes = [];
     
     $scope.analysisTab = { filter: "!!"};
+    $scope.ttDirty = false;
     
     $scope.$on('hereNow', function(event, data){
       $scope.data = data.data;
@@ -50,16 +66,651 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
     
     function showData(x){
       $scope.data = x;
+      $scope.data.resetTT = x.tt.slice(0);
       createTimtableView();
+      populateCourseObj();
+      addTranscriptToStudents();
+      createMeetingMap(); //create a object to map each meetingID to list of classes using that meeting ID.
+      revertResults();
+      createAllCombosForStudents(false);
+      createBlockDropdowns();//Create the drop down lists for each of the options.
+      $scope.dataFetching = false;
       $scope.$digest();
       console.log($scope);
     }
+    
+    $scope.saveTT = function(){
+      console.log("reloading");
+      $scope.dataFetching = true;
+      google.script.run.withSuccessHandler(showData).saveNewTT($scope.data.tt);
+      $scope.ttDirty= false;
+    }
       
     function savedData(x){
-      console.log("done!");
+      console.log("Saving done!");
     }
     
-    $scope.runIt = function(){
+    $scope.saveThisTT = function(){
+      var updateRow = $scope.editClass.update;
+      var courseObj = $scope.data.courseObj;
+      updateRow[3] = courseObj[updateRow[1]]['Course Level'];
+      updateRow[9] = updateRow[1]+updateRow[2];
+      updateRow[8] = updateRow[1]+updateRow[2];
+      console.log($scope.classEdit);
+      $scope.data.tt[$scope.editClass.index] = $scope.editClass.update.slice(0);
+      $scope.editClass.editing = false;
+      $scope.ttDirty = true;
+    }
+    
+    $scope.prepareThis = function(i){
+      $scope.editClass.old = $scope.data.tt[i];
+      $scope.editClass.update = $scope.data.tt[i].slice(0);
+      $scope.editClass.index = i;
+      $scope.editClass.editing = true;
+      console.log($scope.editClass);
+    }
+    
+    $scope.cancelTT = function(){
+      $scope.editClass.update = $scope.editClass.old.slice(0);
+      $scope.editClass.editing = false;
+      $scope.ttDirty = false;
+      //$scope.$digest();
+    }
+    
+    $scope.revertResultsBtn = function(){
+      revertResults();
+    }
+    function revertResults(){ //sets the data.results to data.savedResults which is the original data from the results spreadsheet
+      $scope.data.results = $scope.data.savedResults.slice(1);
+      updateClassCounts();
+      findAllClashes();
+    }
+    
+    function clearResults(){
+      $scope.data.results = [];
+    }
+    
+   
+   
+   $scope.showScope = function(){
+     console.log($scope);
+   }
+   
+   $scope.getSingleLines = function(){
+     var result = {};
+     var courseObj = $scope.data.courseObj;
+     
+     //loop through courseObj
+     for (var course in courseObj){
+       if(courseObj[course].hasOwnProperty("classSections")){
+         if(courseObj[course].classSections.length <= 1){
+           result[course] = courseObj[course];
+         }
+       }
+       console.log("Done get Single Lines");
+     }
+     
+     $scope.data.filteredCourses = result;
+   }
+  
+   $scope.checkSingleLineCombos = function(){
+     var studentObj = $scope.data.studentObj;
+     var filteredCourses = $scope.data.filteredCourses;
+     var allCombos = {};
+     
+     for (var s in studentObj){
+       var myCombos = [];
+       for (var c in studentObj[s].choices) { //for each choice this student has
+          
+         if(filteredCourses.hasOwnProperty(studentObj[s].choices[c].course)){
+           myCombos.push(studentObj[s].choices[c].course);
+         }
+       }
+       console.log(myCombos);
+       //find all combinations
+       myCombos.sort();
+       for (var i = 0; i < myCombos.length; i++) {
+          for (var j = i + 1; j < myCombos.length; j++) {
+            var id = myCombos[i] + "_"+ myCombos[j];// do something with pair (i,j)
+            if(!allCombos.hasOwnProperty(id)) allCombos[id] = 0;
+            allCombos[id]++;   
+            console.log(allCombos);
+          }
+       }  
+     }
+     $scope.data.oneLineCombos = allCombos;
+     console.log("Done get Single Line combos");
+   };
+   
+   $scope.writeOneLineCombos = function(){
+     writeData();
+   }
+   
+   $scope.saveResults = function(){
+      google.script.run.withSuccessHandler(savedData).saveThisArray($scope.data.results);
+   }
+   
+   $scope.allCombosOfClasses = function(){
+     createAllCombosForStudents(true);
+     //initialiseChoices();
+     //google.script.run.withSuccessHandler(savedData).saveThisArray($scope.data.solutions);
+   }
+   
+   $scope.saveSolutions = function () {
+      google.script.run.withSuccessHandler(savedData).saveThisArray($scope.data.solutions);
+      google.script.run.withSuccessHandler(savedData).saveThisArray($scope.data.nosolutions);
+      google.script.run.withSuccessHandler(savedData).saveThisArray($scope.data.results);
+   }
+   
+   function createAllCombosForStudents(write){ //find all combos and add them to the student objects.
+     var HRMOrder = $scope.createTimetableHRMList.split(",");
+     //Loop through each student save all combinations in student object
+     var results = $scope.data.results;
+     var allSsData = $scope.data.studentObj;
+     var subjectObj = $scope.data.timetableObj;
+     for (var hrm in HRMOrder){
+       var thisSs = {};
+       for (var row in allSsData){
+         if(allSsData[row].HRM == HRMOrder[hrm].trim()) thisSs[row] = allSsData[row];
+       }
+       for(var s in thisSs){
+         console.log("checking "+ thisSs[s]['Student ID']);
+         var mc = thisSs[s].choices;
+         var comboArray = [];
+         for (var crs in mc){
+           var sectionsArray = [];
+           for (var section in mc[crs].courseSections){
+             sectionsArray.push(mc[crs].courseSections[section]);
+           }
+           comboArray.push(sectionsArray);
+         }
+         //console.log(comboArray);
+         //console.log(combos);
+         thisSs[s].allCombos = cartesian(comboArray);
+         //Go through and check for valid combos
+       }    
+       console.log("done finding all combos... now finding valid ones");  
+       $scope.data.nosolutions =[];
+       $scope.data.solutions =[];  
+       var solutions = [];
+       for (var ss in thisSs){//for each student.
+         thisSs[ss].solutions = [];
+         thisSs[ss].partialSolutions = [];
+         for (var combo in thisSs[ss].allCombos){ //for each possible combinatino for this student.
+           var blockCount = {1:0, 2:0, 3:0, 4:0, 5:0, 6:0, 7:0};
+           var thisSolution = [thisSs[ss]['Student ID'], "","","","","","",""];
+           for (var thisCl in thisSs[ss].allCombos[combo]){ //add up counts of classes in each block
+             var block = thisSs[ss].allCombos[combo][thisCl][1];
+             blockCount[block]++;
+             if(thisSolution[block] != "") thisSolution[block] += "/";
+             thisSolution[block] += thisSs[ss].allCombos[combo][thisCl][0];
+           }
+           var numClashes = 0;
+           var emptyblocks = 0;
+           var valid = false;
+           for (var bl in blockCount){
+             if (blockCount[bl] == 0) emptyblocks++;
+             if (blockCount[bl] > 1) numClashes += blockCount[bl]-1;
+           }
+           thisSolution.push(thisSs[ss]['HRM']);
+           thisSolution.push(thisSs[ss].valid);         
+           if (numClashes === 0 ){ 
+             thisSs[ss].solutions.push(thisSolution);
+           } else if (numClashes <= $scope.maxClashes){
+             thisSs[ss].partialSolutions.push(thisSolution);
+           }
+           
+         }
+         if (thisSs[ss].solutions.length == 0) {//no solutions has been found for this student
+           thisSs[ss].solved = false;
+           if (thisSs[ss].partialSolutions.length == 0) { //check if there are any partial solutions within clash threshold
+             $scope.data.nosolutions.push([ss,thisSs[ss]['Last Name'], thisSs[ss]['Given Name'], thisSs[ss]['HRM']]);
+           } else {
+             for (var x in thisSs[ss].partialSolutions){
+               solutions.push(thisSs[ss].partialSolutions[x]);
+             }
+           }
+         } else { //1+ solutions have been found for this student
+           thisSs[ss].solved = true;
+           for (var x in thisSs[ss].solutions){
+             solutions.push(thisSs[ss].solutions[x]);
+           }
+         }
+         thisSs[ss].showSolutions = false;
+         thisSs[ss].showPartialSolutions = false;             
+       }
+     }
+     $scope.data.solutions = solutions;
+     console.log($scope);
+     initialiseChoicesOrdered(write);
+   }
+   
+   function cartesian() { //recursively find all combinations in array of varying length arrays from http://jsfiddle.net/9uvfP/
+    var r = [], arg = arguments[0], max = arg.length-1;
+    function helper(arr, i) {
+        for (var j=0, l=arg[i].length; j<l; j++) {
+            var a = arr.slice(0); // clone arr
+            a.push(arg[i][j])
+            if (i==max) {
+                r.push(a);
+            } else
+                helper(a, i+1);
+        }
+    }
+    helper([], 0);
+    return r;
+   };
+   
+   
+   //Loops through students starting with G11s, then G10s, 9s, 8s. 
+   function initialiseChoicesOrdered(write){
+     var HRMOrder = $scope.createTimetableHRMList.split(",");
+     //Loop through each student and pick first / best solution into results object
+     
+     var results = $scope.data.results;
+     var allSsData = $scope.data.studentObj;
+     var subjectObj = $scope.data.timetableObj;
+     for (var hrm in HRMOrder){
+       var ssData = {};
+       for (var row in allSsData){
+         if(allSsData[row].HRM == HRMOrder[hrm].trim()) ssData[row] = allSsData[row];
+       }
+       for(var i in ssData){
+         getBestCombo(ssData[i], write);
+       }
+     }
+     findAllClashes();
+     console.log($scope);
+     $scope.toggleTabs('analysis');
+   }
+   
+   function getBestCombo(ssDatai,write){
+     var subjectObj = $scope.data.timetableObj;
+     var i = ssDatai['Student ID'];
+      updateClassCounts();
+      //sconsole.log([i, ssDatai]);
+      try{
+       if(ssDatai.solutions.length > 0) {
+         var myChoice = ssDatai.solutions.slice(0);
+         var tempChoice = ssDatai.solutions;
+       } else if (ssDatai.partialSolutions.length > 0) {
+         var myChoice = ssDatai.partialSolutions.slice(0);
+         var tempChoice = ssDatai.partialSolutions;
+       } else {
+         return;
+       }
+       var scores = [];
+       for(var ch in tempChoice){
+         myChoice[ch] = tempChoice[ch].slice(0);
+         var thisscore = 0;
+         var thisClashList = ["","","","","","","",""];
+         for(var blk = 1; blk <= 7; blk++){
+           var thisClass = myChoice[ch][blk];
+           if(thisClass == ""){ //If there is no class for this block
+             thisscore -= 10;
+           } else if (subjectObj.hasOwnProperty(thisClass)){ //If there is one choice for this block
+             if(subjectObj[thisClass].meetingEnrolled < subjectObj[thisClass]['Room Quota']){
+               thisscore += 100;
+               thisscore += parseInt(thisClass[3]);
+             } else {
+               thisscore -= 10;
+             }
+           } else { //If there is a clash for this block
+             var bestClash = findBestOption(thisClass, i);
+             thisscore += bestClash.score;
+             //myChoice[ch] = myChoice[ch].slice(0); //make a copy of the array as we are about to write the preferred course
+             myChoice[ch][blk] = bestClash.courseSection; //update with best option
+             for (var d in bestClash.dropped){
+               if (d > 0) {thisClashList[blk] += " / ";}
+               thisClashList[blk] += bestClash.dropped[d];
+             }
+             //console.log(thisClashList[blk]);
+           }
+         }
+         scores.push([ch, thisscore]);
+         myChoice[ch].push(thisscore);
+         tempChoice[ch].push(thisscore);
+         for (var tcl = 1; tcl <= 7; tcl++) myChoice[ch].push(thisClashList[tcl]); //Add clashes to the array.
+      }
+    } catch (e){
+         console.log(e);
+    }
+    //Find highest score 
+    var maxitem = -1;
+    var maxscore = -10000;
+    for(var scr in scores){
+     if(scores[scr][1] > maxscore){
+       maxitem = scores[scr][0];
+       maxscore = scores[scr][1];
+     }
+    } 
+    if(write) addThisResult(i,myChoice[maxitem]); //add to result list if in write mode
+   }
+   
+   $scope.updateCCounts = function(){
+     updateClassCounts();
+   }
+  
+   function updateClassCounts(){
+     var timetableObj = $scope.data.timetableObj;
+     var meetingMap = $scope.data.meetingMap;
+     var results = $scope.data.results;
+     
+     $scope.dashboard = { Total: {invalid:0, clash:0, solved:0},
+                         HRM11: {invalid:0, clash:0, solved:0} ,
+                         HRM10:{invalid:0, clash:0, solved:0},
+                         HRM09:{invalid:0, clash:0, solved:0},
+                         HRM08: {invalid:0, clash:0, solved:0}};
+     var dashboard = $scope.dashboard;
+     //reset all values
+     for(var cl in timetableObj){//Reset counts
+       timetableObj[cl].classEnrolled = 0;
+       timetableObj[cl].meetingEnrolled = 0;
+     }     
+     for(var r in results){ //loop through results
+       for(var col = 5; col <= 11; col++){ //for each block (col) in the results (for each class chosen)
+         if(timetableObj.hasOwnProperty(results[r][col])){ //if it is a class
+           timetableObj[results[r][col]].classEnrolled++; //add to the class count
+           for(var m in meetingMap[timetableObj[results[r][col]].MeetingID]){
+             timetableObj[meetingMap[timetableObj[results[r][col]].MeetingID][m]].meetingEnrolled++; //add to the meeting count in all classes in this meeting
+           }
+         }
+       }
+       //Update Dashboard
+       if (results[r][24]){
+         dashboard.Total.solved++;
+         dashboard[results[r][3].substring(0,5)].solved++;
+       } else {
+         dashboard.Total.clash++;
+         dashboard[results[r][3].substring(0,5)].clash++;
+       }
+     }
+   }
+   
+   function addThisResult(sid,choice){
+     var results = $scope.data.results;
+     var solved = true;
+     for(var x=1; x<=7; x++) if(choice[x] == "") solved = false;
+     var thisResult = [sid, $scope.data.thisUser, "", $scope.data.studentObj[sid].HRM, solved, choice[1],choice[2],choice[3],choice[4],choice[5],choice[6],choice[7],"","","","",false,choice[11],choice[12],choice[13],choice[14],choice[15],choice[16],choice[17], solved];
+     var found = false;
+     var items = results.length;
+     var i = 0;
+     while ((i < items) && !found){
+       if (results[i][0] == sid) {
+         results[i] = thisResult;
+         found = true;
+       }
+       i++;
+     }
+     if (!found){
+       results.push(thisResult);
+     }
+   }
+   
+   //this function takes a string of courses and returns the best course to be chosen by the student (and relevant score for consideration?)
+   function findBestOption(courses, sid){
+     var theCourses = courses.split("/");
+     var subjectsObj = $scope.data.timetableObj;
+     var courseObj = $scope.data.courseObj;
+     var studentsObj = $scope.data.studentObj;
+     var scores = [];
+     
+     for (var c in theCourses){
+       //check each course - level, how much does student need it
+       var thisScore = 0;
+       if(subjectsObj.hasOwnProperty(theCourses[c])){
+         var thisClass = theCourses[c];
+         
+         var dept = courseObj[subjectsObj[thisClass].COURSEID].Department;
+         //console.log([thisClass, theCourses[c],dept]);
+         thisScore += parseInt(studentsObj[sid].gradRemaining[dept]); //add the remaining credits required in this department as score.
+         thisScore += parseInt(subjectsObj[thisClass].Level);
+         if(subjectsObj[thisClass].meetingEnrolled < subjectsObj[thisClass]['Room Quota']){   //Add score if class can be enrolled into (enough quota).  
+           thisScore += 100;
+         } else {
+           thisScore -= 10;
+         }   
+         //console.log([thisScore, dept]);
+         scores.push([c,thisScore,theCourses[c]]);
+       }  
+     }
+     
+     var maxScore = -1000;
+     var maxCourse = "";
+     var others = [];
+     for (var sc in scores){
+       if (scores[sc][1] > maxScore){
+         maxScore = scores[sc][1];
+         maxCourse = scores[sc][2];
+         others = theCourses.slice(0);
+         others.splice(scores[sc][0], 1);
+       }
+     }
+     //console.log(sid, others, maxCourse);
+     return {courseSection: maxCourse, score: maxScore, dropped: others};
+   }
+   
+   //A function to loop through the results object and count the number of clashes that have been generated / chosen
+   function findAllClashes(){
+     var results = $scope.data.results;
+     $scope.data.resultsClash = {};
+     var clashes = $scope.data.resultsClash;
+     for (var i in results){
+       for(var blk = 1; blk <= 7; blk++){ //for each block
+         var choiceClass = blk+4;
+         var clashClass = blk+16;
+         if(results[i][clashClass] != "") {
+           if(results[i][choiceClass] < results[i][clashClass]){
+             var code = results[i][choiceClass] + " / " + results[i][clashClass];
+           } else {
+             var code = results[i][clashClass] + " / " + results[i][choiceClass];
+           }
+           if (!clashes.hasOwnProperty(code)) clashes[code] = 0;
+           clashes[code]++
+         }
+       }
+     }
+     console.log(clashes);
+   }
+   
+   function createTimtableView(){
+      var rows = [0,1,2,3,4,5,6,7];
+      var rowIndx = 0;
+      var cols = [1,2,3,4,5];
+      var colIndx = 1;
+      var timetableFormat = [];
+      for (var r=0; r < rows.length; r++){
+        //var thisRow = { row: rows[r]};
+        var thisRow = [];
+        for (var c=0; c < cols.length; c++){
+          //thisRow[c] = cols[c];
+          thisRow.push(cols[c]);
+        }
+        timetableFormat[rows[r]] = thisRow
+        //timetableFormat.push(thisRow);
+      }
+      
+      var tt = $scope.data.tt;
+      var ttEdit = [];
+      for(var t in tt){
+        ttEdit.push(false);
+      }
+      
+      var crs = $scope.data.courseObj;
+      var courselist = [];
+      for (var c in crs){
+        courselist.push(c);
+      }
+      
+      $scope.data.timetableFormat = timetableFormat;
+      $scope.data.ttEdit = ttEdit;
+      $scope.data.courselist = courselist;
+      console.log("timetable draw done!")
+   }
+   
+   function populateCourseObj(){
+     var myTT = $scope.data.timetableObj;
+     var courseObj = $scope.data.courseObj;
+     var ssResults = $scope.data.studentObj;
+     var invalidRequests = $scope.data.invalidRequests;
+     //Add classes from timetable to course Object
+     for (var cl in myTT){ //Loop through class section data
+       if(courseObj.hasOwnProperty(myTT[cl].COURSEID)){ //If class is found in courseObj
+       var thisCourse = courseObj[myTT[cl].COURSEID];
+       if(!thisCourse.hasOwnProperty("classSections")) { //Create a class sections property and push the class to it
+         thisCourse["classSections"] = [myTT[cl]];
+       } else {
+         thisCourse["classSections"].push(myTT[cl]);
+       }
+       //Check and reconcile courseSearchID aliases with courseIDs (for MAC5C to come up as MAC51 and MAC52)
+       if(!courseObj.hasOwnProperty(myTT[cl].RequestSearchID)){//no listing under the requestSearchID so add it
+         courseObj[myTT[cl].RequestSearchID] = JSON.parse( JSON.stringify( courseObj[myTT[cl].COURSEID] ) );
+         courseObj[myTT[cl].RequestSearchID]["classSections"] = [myTT[cl]];
+       }
+         
+       }
+     }     
+     //add course choices object to student object per student
+     for (var s in ssResults){
+        var myChoices = ssResults[s].UniqueRequestsID.split(",");
+        ssResults[s].choices = [];
+        ssResults[s].valid = true;
+        for (var myCourse in myChoices){
+          if (courseObj.hasOwnProperty(myChoices[myCourse])){
+            var pushObj= {course: myChoices[myCourse], courseSections: []};
+            var myClasses = courseObj[myChoices[myCourse]].classSections;
+            for (var sec in myClasses){
+              //pushObj.courseSections.push({class: myClasses[sec]['SECTIONCODE'], block: myClasses[sec]['BLOCK']});
+              pushObj.courseSections.push([myClasses[sec]['SECTIONCODE'], myClasses[sec]['BLOCK']]);
+            }
+            ssResults[s].choices.push(pushObj);
+          }
+        }
+      }
+      for (var s in invalidRequests){
+        var myChoices = invalidRequests[s].UniqueRequestsID.split(",");
+        invalidRequests[s].choices = [];
+        invalidRequests[s].valid = false;
+        for (var myCourse in myChoices){
+          if (courseObj.hasOwnProperty(myChoices[myCourse])){
+            var pushObj= {course: myChoices[myCourse], courseSections: []};
+            var myClasses = courseObj[myChoices[myCourse]].classSections;
+            for (var sec in myClasses){
+              //pushObj.courseSections.push({class: myClasses[sec]['SECTIONCODE'], block: myClasses[sec]['BLOCK']});
+              pushObj.courseSections.push([myClasses[sec]['SECTIONCODE'], myClasses[sec]['BLOCK']]);
+            }
+            invalidRequests[s].choices.push(pushObj);
+          }
+        }
+        ssResults[s] = JSON.parse( JSON.stringify( invalidRequests[s] ) ); 
+      }
+   }
+   
+   function createBlockDropdowns(){
+     var dropdown = {0: [""], 1:[""], 2:[""],3:[""], 4:[""], 5:[""], 6:[""], 7:[""]};
+     var timetableObj = $scope.data.timetableObj;
+     for (var c in timetableObj){
+       dropdown[timetableObj[c].BLOCK].push(timetableObj[c].SECTIONCODE);
+     }
+     for(var x in dropdown) dropdown[x].sort();
+     $scope.data.ttDropdowns = dropdown;
+   }
+   
+   function createMeetingMap(){
+      $scope.data.meetingMap = {};
+      var myMap = $scope.data.meetingMap;
+      var ttObj = $scope.data.timetableObj;
+      for (var m in ttObj){
+        var meetingID = ttObj[m].MeetingID;
+        if(!myMap.hasOwnProperty(meetingID)) myMap[meetingID] = [];
+        myMap[meetingID].push(m);
+      }
+   }
+   
+   function addTranscriptToStudents(){
+     var transcript = $scope.data.transcripts;
+     var studentObj = $scope.data.studentObj;
+     for (var s in studentObj) { //loop through all students in student object and initialise the transcript array and department credit counts and grad reqs
+       studentObj[s].transcript = [];
+       studentObj[s].deptCredits = [0,0,0,0,0,0,0,0,0,0];
+       studentObj[s].gradRequirements = [0,4,4,4,4,2,2,2,2,0]; //hard coded AIS grad requirements (Array position relates to department ID).
+       studentObj[s].gradRemaining = [0,4,4,4,4,2,2,2,2,0];
+     }
+     for (var t in transcript){ //Loop through all entries in the transcript object and add them to the student object, keeping track of depratment credit counts
+       //console.log([transcript[t][0],studentObj[transcript[t][0]]]);
+       if(studentObj.hasOwnProperty(transcript[t][0])){
+         studentObj[transcript[t][0]].transcript.push(transcript[t]);
+         studentObj[transcript[t][0]].deptCredits[transcript[t][5]] += transcript[t][8]; //Add the credits earned for this transcript entry to the department credit count
+         studentObj[transcript[t][0]].gradRemaining[transcript[t][5]] -= transcript[t][8];
+       }
+     }     
+   }
+   
+   function createCoursePairs(){
+   
+   }
+
+
+   function writeData(){
+     google.script.run.withSuccessHandler(savedData).saveThisObject($scope.data.oneLineCombos);
+   }
+   
+   google.script.run.withSuccessHandler(showData).uridFromTimetable();
+    
+});
+
+app.filter('orderByValue', function () {
+  // custom value function for sorting
+  function myValueFunction(card) {
+  }
+  return function (obj) {
+    if(obj == undefined) return obj;
+    var array = [];
+    Object.keys(obj).forEach(function (key) {
+      // inject key into each object so we can refer to it from the template
+      obj[key].name = key;
+      array.push(obj[key]);
+    });
+    // apply a custom sorting function
+    array.sort(function (a, b) {
+      if(a.COURSEID < b.COURSEID) return -1;
+      if(a.COURSEID > b.COURSEID) return 1;
+      return 0;
+    });
+    return array;
+  };
+});
+
+app.filter('orderByValueSs', function () {
+  // custom value function for sorting
+  function myValueFunction(card) {
+  }
+  return function (obj) {
+    if(obj == undefined) return obj;
+    var array = [];
+    Object.keys(obj).forEach(function (key) {
+      // inject key into each object so we can refer to it from the template
+      obj[key].name = key;
+      array.push(obj[key]);
+    });
+    return array;
+  };
+}).filter('countOfValue', function () {
+    return function (data, key, val) {        
+        if (angular.isUndefined(data) || angular.isUndefined(key))
+            return 0;        
+        var sum = 0;        
+        angular.forEach(data,function(value){
+            if(value[key]== val) sum++;
+        });        
+        return sum;
+    }
+});
+
+
+
+/* OLD SCRIPTS
+ $scope.runIt = function(){
       console.log("Run!");
       var ssData = $scope.data.studentObj;
       var ivData = $scope.data.invalidRequests;
@@ -142,73 +793,7 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
       console.log($scope);
     }
     
-    function fitTheseRequestsBAK(ssData, grptitle){
-      var doneSs = $scope.data.doneSs;
-      //var doneSs = $scope.data.studentObj;
-      var keys = $scope.data.urids;
-      var total = 0;
-      var found = 0;
-      $scope.output.push(grptitle);
-      for (var i in ssData ){ //for each student
-        if(!doneSs.hasOwnProperty(ssData[i]['Student ID'])){
-          doneSs[ssData[i]['Student ID']] = ssData[i];
-          doneSs[ssData[i]['Student ID']].done = false; 
-          doneSs[ssData[i]['Student ID']].matches = 0;
-          doneSs[ssData[i]['Student ID']].combos = [];
-        }
-        console.log(ssData[i]);
-        $scope.output.push("checking " + ssData[i]['Student ID'] +": " + ssData[i]['UniqueRequestsID']);
 
-        if(ssData[i].choices.length > 0) {
-          var dataFound = [];
-          //Note and check keys
-          if(keys.hasOwnProperty(ssData[i]['UniqueRequestsID'])) { //this combo already exists
-            dataFound = keys[ssData[i]['UniqueRequestsID']].combos;
-          } else {
-            keys[ssData[i]['UniqueRequestsID']] = { count: 0, students: [], combos: []};
-            $scope.tempProblems = [];
-            dataFound = recursion2(ssData[i].choices.slice(0));
-            keys[ssData[i]['UniqueRequestsID']].combos = dataFound;
-          }
-          
-          keys[ssData[i]['UniqueRequestsID']].count++;
-          keys[ssData[i]['UniqueRequestsID']].students.push(ssData[i]['Student ID']);
-          $scope.output.push(dataFound);
-          total++;
-          doneSs[ssData[i]['Student ID']].done = true;
-          doneSs[ssData[i]['Student ID']].URID = ssData[i]['UniqueRequestsID'];
-          doneSs[ssData[i]['Student ID']].matches = dataFound.length;
-          if (dataFound.length > 0) {//matches were found
-            found++;
-            doneSs[ssData[i]['Student ID']].combos = dataFound.slice(0);
-            doneSs[ssData[i]['Student ID']].solved = true;
-            doneSs[ssData[i]['Student ID']].bestNum = dataFound[0].reduce(function (ttl, x){return ttl + (x !== "")},0);
-          } else {
-            doneSs[ssData[i]['Student ID']].solved = false;
-            $scope.problems.push($scope.tempProblems.slice(0));
-            if($scope.tempProblems.length > 0){
-              var prb = $scope.tempProblems.length-1;
-              var max = $scope.tempProblems[prb].reduce(function (ttl, x){return ttl + (x !== "")},0); //counts how many non blank spaces
-              var bestChoices = [];
-              //bestChoices.push($scope.tempProblems[prb]);
-              var current = 0;
-              while ((max > current) && (prb > 0)) {
-                bestChoices.push($scope.tempProblems[prb].slice(0));
-                prb--;
-                current = $scope.tempProblems[prb].reduce(function (ttl, x){return ttl + (x !== "")},0);
-              }
-              doneSs[ssData[i]['Student ID']].combos = bestChoices.slice(0);
-              doneSs[ssData[i]['Student ID']].bestNum = max;
-            }
-          }
-        }
-
-        //if (x > $scope.end) break;
-      }
-      $scope.output.push(found +" / "+total +" = " +(found/total*100));
-      console.log($scope);
-    }
-    
     
     //This function recursively goes through classes for the student choices and returns an array of classes that fit the timetable or a blank array if it doesn't fit.
     function recursion2(courseObj){ 
@@ -216,22 +801,23 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
       var current = courseObj.pop();
       var combinations = courseObj.length > 0 ? recursion2(courseObj) : [["", "", "","","","",""]];
       for (var section in current.courseSections){
-        var sectionBlock = current.courseSections[section].block;
+        var sectionBlock = current.courseSections[section][0];
+        //$scope.output.push("checking " + current.courseSections[section].class);
         for (var combo in combinations){
           var thisCombo = combinations[combo].slice(0);
-          //$scope.output.push("checking " + current.courseSections[section].class);
+          //$scope.output.push("checking " + current.courseSections[section].class +", combos: "+thisCombo);
           var conflict = false;
           for (var bl = 1; bl <= 7; bl++){
             if (bl == sectionBlock) {
               if (thisCombo[bl-1] != ""){
-                //$scope.output.push("Conflict found!");
+                //$scope.output.push("Conflict found! Block:"+bl+" thisCombo:"+thisCombo[bl-1] );
                 conflict = true;
-                var clashCode = thisCombo[bl-1]+current.courseSections[section].class;
+                var clashCode = thisCombo[bl-1]+current.courseSections[section][1];
                 if( !$scope.clashes.hasOwnProperty(clashCode)) { $scope.clashes[clashCode] = 0};
                 $scope.clashes[clashCode]++;
                 break;
               } else {
-                thisCombo[bl-1] = current.courseSections[section].class;
+                thisCombo[bl-1] = current.courseSections[section][1];
                 //$scope.output.push(current.courseSections[section].class + "  was OK!");
               }
             }
@@ -244,120 +830,25 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
       }
       //console.log(returnVal);
       return returnVal;
-   }
+   } 
    
-   $scope.showScope = function(){
-     console.log($scope);
-   }
-   
-   $scope.getSingleLines = function(){
-     var result = {};
-     var courseObj = $scope.data.courseObj;
-     
-     //loop through courseObj
-     for (var course in courseObj){
-       if(courseObj[course].hasOwnProperty("classSections")){
-         if(courseObj[course].classSections.length <= 1){
-           result[course] = courseObj[course];
-         }
+   //Puts in students' 1st solution into results object, looping through all students
+   function initialiseChoices(){ 
+     //Loop through each student and pick first / best solution into results object
+     $scope.data.results = [];
+     var results = $scope.data.results;
+     var ssData = $scope.data.studentObj;
+     for(var i in ssData){
+       if(ssData[i].solutions.length > 0) {
+         var myChoice = ssData[i].solutions[0];
+       } else if (ssData[i].partialSolutions.length > 0) {
+         var myChoice = ssData[i].partialSolutions[0];
+       } else {
+         continue;
        }
-       console.log("Done get Single Lines");
+       results.push([i, $scope.data.thisUser, "", false, myChoice[1], myChoice[2], myChoice[3], myChoice[4], myChoice[5], myChoice[6], myChoice[7],"","","",false]);
      }
-     
-     $scope.data.filteredCourses = result;
-   }
-  
-   $scope.checkSingleLineCombos = function(){
-     var studentObj = $scope.data.studentObj;
-     var filteredCourses = $scope.data.filteredCourses;
-     var allCombos = {};
-     
-     for (var s in studentObj){
-       var myCombos = [];
-       for (var c in studentObj[s].choices) { //for each choice this student has
-          
-         if(filteredCourses.hasOwnProperty(studentObj[s].choices[c].course)){
-           myCombos.push(studentObj[s].choices[c].course);
-         }
-       }
-       console.log(myCombos);
-       //find all combinations
-       myCombos.sort();
-       for (var i = 0; i < myCombos.length; i++) {
-          for (var j = i + 1; j < myCombos.length; j++) {
-            var id = myCombos[i] + "_"+ myCombos[j];// do something with pair (i,j)
-            if(!allCombos.hasOwnProperty(id)) allCombos[id] = 0;
-            allCombos[id]++;   
-            console.log(allCombos);
-          }
-       }  
-     }
-     $scope.data.oneLineCombos = allCombos;
-     console.log("Done get Single Line combos");
-   };
-   
-   $scope.writeOneLineCombos = function(){
-     writeData();
-   }
-   
-   function allCombosOfClasses = function(){
-     var thisSs = $scope.data.doneSs[0];
-     console.log("checking "+ thisSs['Student ID']);
-     var mc = thisSs.choices;
-     
-   }
-   
-   function createTimtableView(){
-      var rows = [0,1,2,3,4,5,6,7];
-      var rowIndx = 0;
-      var cols = [1,2,3,4,5];
-      var colIndx = 1;
-      var timetableFormat = [];
-      for (var r=0; r < rows.length; r++){
-        //var thisRow = { row: rows[r]};
-        var thisRow = [];
-        for (var c=0; c < cols.length; c++){
-          //thisRow[c] = cols[c];
-          thisRow.push(cols[c]);
-        }
-        timetableFormat[rows[r]] = thisRow
-        //timetableFormat.push(thisRow);
-      }
-      
-      var tt = $scope.data.tt;
-      var ttEdit = [];
-      for(var t in tt){
-        ttEdit.push(false);
-      }
-      
-      var crs = $scope.data.courseObj;
-      var courselist = [];
-      for (var c in crs){
-        courselist.push(c);
-      }
-      
-      $scope.data.timetableFormat = timetableFormat;
-      $scope.data.ttEdit = ttEdit;
-      $scope.data.courselist = courselist;
-      console.log("timetable draw done!")
-   }
-   
-   $scope.prepareThis = function(i){
-     $scope.editClass.old = $scope.data.tt[i];
-     $scope.editClass.update = $scope.data.tt[i];
-     $scope.editClass.index = i;
-   }
-   
-   $scope.updateThis = function(i){
-     console.log(i);
-     console.log($scope.data.tt[i]);
-   }
+     updateClassCounts();
+   }*/
 
-   function writeData(){
-     google.script.run.withSuccessHandler(savedData).saveThisObject($scope.data.oneLineCombos);
-   }
-
-   google.script.run.withSuccessHandler(showData).uridFromTimetable();
-    
-});
 </script>

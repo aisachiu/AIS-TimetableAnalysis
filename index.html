@@ -5,6 +5,7 @@
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap.min.css">
     
     <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.6.2/angular.min.js"></script>
+    <?!= include("css"); ?>
   </head>
   <body>
   <div class="head-container"><div class="header" id="fixed-head"></div></div>
@@ -19,100 +20,173 @@
         <span class="icon-bar"></span>
         <span class="icon-bar"></span>
       </button>
-      <a class="navbar-brand" href="#">Brand</a>
+      <a class="navbar-brand" href="#">Class Allocation</a>
     </div>
     <!-- Collect the nav links, forms, and other content for toggling -->
     <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
       <ul class="nav navbar-nav">
-        <li class="active"><a href="#" ng-click="toggleOutput()">Output <span class="sr-only">(current)</span></a></li>
-        <li><a href="#">Link</a></li>
-        <li class="dropdown">
-          <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">Dropdown <span class="caret"></span></a>
-          <ul class="dropdown-menu">
-            <li><a href="#">Action</a></li>
-          </ul>
-        </li>
-      </ul>
-      <form class="navbar-form navbar-left">
-        <div class="form-group">
-          <input type="text" class="form-control" placeholder="Search">
-        </div>
-        <button type="submit" class="btn btn-default">Submit</button>
-      </form>
-      <ul class="nav navbar-nav navbar-right">
-        <li><a href="#">Link</a></li>
-        <li class="dropdown">
-          <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">Dropdown <span class="caret"></span></a>
-          <ul class="dropdown-menu">
-            <li><a href="#">Action</a></li>
-            <li><a href="#">Another action</a></li>
-            <li><a href="#">Something else here</a></li>
-            <li role="separator" class="divider"></li>
-            <li><a href="#">Separated link</a></li>
-          </ul>
-        </li>
+        <li ng-repeat="(tab, val) in tabs" ng-click="toggleTabs(tab)" ng-class="{'active':val}"><a>{{tab}}</a></li>
       </ul>
     </div><!-- /.navbar-collapse -->
   </nav>
-      <div>
-        <div><label>Output<input type="checkbox" ng-model="tabs.output" /></label>  
-        <label>Timetable<input type="checkbox" ng-model="tabs.timetable" /></label>  
-        <label>Analysis<input type="checkbox" ng-model="tabs.analysis" /></label>
-        
-        
+      <div ng-show="dataFetching">Loading...</div>
+      <div ng-show="!dataFetching">
+<!--          <p><button ng-click="runIt();">Run!</button></p>
+      <p><button ng-click="getSingleLines();">Get Single Lines</button></p>
+        <p><button ng-click="checkSingleLineCombos();">checkSingleLineCombos</button></p> -->
+        <div class="col-md-6">
+          <p><button ng-click="showScope();">Show Scope in Console</button></p> 
+          <p><button ng-click="saveSolutions();">Save Combos to Sheet</button></p>
+          <p><button ng-Click="saveResults();">Save Results</button> | <button ng-Click="revertResultsBtn();">Revert Results</button></p>
         </div>
-        <p><button ng-click="runIt();">Run!</button></p>
-        <p><button ng-click="getSingleLines();">Get Single Lines</button></p>
-        <p><button ng-click="checkSingleLineCombos();">checkSingleLineCombos</button></p>
-        <p><button ng-click="showScope();">Show Scope in Console</button></p>
-        <p>Output:</p>
-        
-        <!-- Output tab -->
-        <div class="col-md-12" ng-show="tabs.output">
-          <ul>
-            <li ng-repeat="x in output track by $index">{{x}}</li>
-          </ul>
-        </div><!-- end output tab -->
-        
-        <!-- student analysis tab -->
-        <div class="col-md-12" ng-show="tabs.analysis">
+        <div class="col-md-6">
+          <table class="table table-striped">
+            <tr><th>Cat</th><th>Solved></th><th>Clash / Incomplete</th><th>Total</th></tr>
+            <tr ng-repeat="(key, val) in dashboard">
+              <td>{{key}}</td>
+              <td>{{val.solved}} ({{(val.solved / (val.solved+val.clash) *100).toFixed(1)}}%)</td>
+              <td>{{val.clash}} ({{(val.clash / (val.solved+val.clash) *100).toFixed(1)}}%)</td>
+              <td>{{val.solved+val.clash}}
+            </tr>
+          </table>
+        </div>
+        <!-- allocate best choices tab -->
+        <div class="col-md-12" ng-show="tabs.allocate">
           <div class="row">
-            <div></div>
-              <table class="table">
-                <tr ng-repeat="val in data.doneSs | orderBy: 'bestNum'" ng-class="{'success':(val.valid && val.solved), 'warning': !val.solved}">
-                  <td class="col-md-5" ><h3>{{val['Last Name']}} {{val['Given Name']}} - {{val['HRM']}}<span class="glyphicon glyphicon-ok" ng-show="val.valid"></span><span class="glyphicon glyphicon-thumbs-up" ng-show="val.solved"></span></h3>
-                  <br>{{sid}}
-                  <br>Requests:{{val.URID}}</td>
-                  
-                  <td class="col-md-7"><span class="small" ng-repeat="combo in val.combos">{{combo}} | </span>
-                      <br>Number of combos:{{val.combos.length}}
-                      <br>Most number of courses that fit: {{val.bestNum}}
-                  </td>
-                </tr>
-              </table>
-            <div></div>
+              <p>Here you can automatically allocate class sections based on student course requests for the HRMs listed below.</p>
+              <p>The current algorithm looks at all combinations possible for each student. If there are combinations that fit the timetable without clashes, it will then assign points based on whether 
+                  there are available spots in the class sections. It will then choose the combination with the highest score. If all combinations contain classes that are full, the system will still assign the combo with
+                  the highest score, meaning some classes could be over subscribed.</p>
+              <p>If the student's requests do not fit the timetable, the system will consider all combinations that contain clashes up to the clash threshold you set below ("max chalshes permitted").
+                 For blocks where there are clashes, the system will automatically choose the best class based on the level of the class (5C, 4C, etc - higher level class will score higher) and whether the student needs it
+                 as a graduation requirement in that department (eg, if the clash includes Math and VPA, but the student has completed all Math credits but has done no VPA credits, the VPA choice will score higher than Math).
+                 Once allocation has been run, you can view all results on the Analysis tab.</p>
+              <p>Allocating classes adds to the current results. It isn't saved until you hit the "Save Results" button (which then writes it to the central spreadsheet). The "Revert Results" button 
+                 deletes all changes you have made in this session and reloads the data that has been saved to a spreadsheet. The "Clear All Results" button clears all class allocations, allowing them to be re-allocated.</p>
+              <p>For which homerooms? (full HRM names separated by commas<input type="text" size="50" ng-model="createTimetableHRMList" /></p>
+              <p> Max Clashes permitted: <input ng-model="maxClashes" type="number" /></p>
+              <p><button ng-click="allCombosOfClasses();">Allocate Classes</button> </p>
           </div>
         </div><!-- end analysis tab -->
         
-                <!-- student analysis tab -->
+                <!-- student analysis2 tab -->
+        <div class="col-md-12" ng-show="tabs.quotas">
+          <div class="row" >
+            <label class="col-md-2 small label label-default" ng-repeat="val in data.timetableObj | orderByValue" ng-class="{'label-danger': (val.meetingEnrolled > val['Room Quota']),'label-warning': (val.meetingEnrolled == val['Room Quota'])}">{{val.SECTIONCODE}} {{val.meetingEnrolled}}({{val.classEnrolled}})/{{val['Room Quota']}}</label>
+          </div>
+        </div>
+        <div class="col-md-12" ng-show="tabs.clashes">
+          <div class="row" >
+            <label class="col-md-4 label" ng-repeat="(key,val) in data.resultsClash" ng-class="{'label-default': (val <= 1), 'label-info': (val >1)}">{{key}}: {{val}}</label>
+          </div>
+        </div>
+        <div class="col-md-12" ng-show="tabs.analysis">
+          <div class="row">
+            <div>
+              <ul class="nav nav-bar">
+                <li ng-repeat="(key,val) in analysisView"><input type="checkbox" ng-model="analysisView[key]" />:{{key}}</li>
+              </ul>
+            </div>
+            <table class="table">
+              <tr ng-repeat="result in data.results" ng-class="{'success':(data.studentObj[result[0]].valid && data.studentObj[result[0]].solved), 'warning': !data.studentObj[result[0]].solved}" ng-show="analysisView.All || (data.studentObj[result[0]].solved == analysisView.Solved)">
+                <td class="col-md-5" ><h4>{{data.studentObj[result[0]]['Last Name']}} {{data.studentObj[result[0]]['Given Name']}} - {{data.studentObj[result[0]]['HRM']}}<span class="glyphicon glyphicon-ok" ng-show="val.valid"></span><span class="glyphicon glyphicon-thumbs-up" ng-show="val.solved"></span></h4>
+                  <br>{{result[0]}}
+                  <br>Requests:{{data.studentObj[result[0]].UniqueRequestsID}}
+                  <br><span class="small">Current Choices: {{result[5]}}, {{result[6]}}, {{result[7]}}, {{result[8]}}, {{result[9]}}, {{result[10]}}, {{result[11]}}</span>
+                  <table class="table table-striped" ng-show="analysisView.Choicetable">
+                    <tr><th>Block</th><th>Chosen:</th><th>Clash:</th></tr>
+                    <tr><td>1</td><td><select class="form-control" ng-options="o as o for o in data.ttDropdowns[1]" ng-model="result[5]"></select></td><td>{{result[17]}}</td></tr>
+                    <tr><td>2</td><td><select class="form-control" ng-options="o as o for o in data.ttDropdowns[2]" ng-model="result[6]"></select></td><td>{{result[18]}}</td></tr>
+                    <tr><td>3</td><td><select class="form-control" ng-options="o as o for o in data.ttDropdowns[3]" ng-model="result[7]"></select></td><td>{{result[19]}}</td></tr>
+                    <tr><td>4</td><td><select class="form-control" ng-options="o as o for o in data.ttDropdowns[4]" ng-model="result[8]"></select></td><td>{{result[20]}}</td></tr>
+                    <tr><td>5</td><td><select class="form-control" ng-options="o as o for o in data.ttDropdowns[5]" ng-model="result[9]"></select></td><td>{{result[21]}}</td></tr>
+                    <tr><td>6</td><td><select class="form-control" ng-options="o as o for o in data.ttDropdowns[6]" ng-model="result[10]"></select></td><td>{{result[22]}}</td></tr>
+                    <tr><td>7</td><td><select class="form-control" ng-options="o as o for o in data.ttDropdowns[7]" ng-model="result[11]"></select></td><td>{{result[23]}}</td></tr>
+                    
+                  </table>
+                  <button ng-click="updateCCounts();">Update quotas</button>
+                </td>    
+                <td class="col-md-7">
+                  <br><label ng-click="data.studentObj[result[0]].showSolutions = !data.studentObj[result[0]].showSolutions">Number of solutions:{{data.studentObj[result[0]].solutions.length}}<span class="glyphicon glyphicon-triangle-right" ng-show="!data.studentObj[result[0]].showSolutions"></span><span class="glyphicon glyphicon-triangle-bottom" ng-show="data.studentObj[result[0]].showSolutions"></span></label>
+                  <ul>
+                    <li class="small" ng-repeat="solution in data.studentObj[result[0]].solutions | orderBy:'-[10]'" ng-show="data.studentObj[result[0]].showSolutions">{{solution[10]}}: {{solution[1]}}, {{solution[2]}}, {{solution[3]}}, {{solution[4]}}, {{solution[5]}}, {{solution[6]}}, {{solution[7]}}</li>
+                  </ul>
+                  <br><label ng-click="data.studentObj[result[0]].showPartialSolutions = !data.studentObj[result[0]].showPartialSolutions">Number of partial solutions:{{data.studentObj[result[0]].partialSolutions.length}}<span class="glyphicon glyphicon-triangle-right" ng-show="!data.studentObj[result[0]].showPartialSolutions"></span><span class="glyphicon glyphicon-triangle-bottom" ng-show="data.studentObj[result[0]].showPartialSolutions"></span></label>
+                  <ul>
+                    <li class="small" ng-repeat="psolution in data.studentObj[result[0]].partialSolutions | orderBy:'-[10]'" ng-show="data.studentObj[result[0]].showPartialSolutions">{{psolution[10]}}: {{psolution[1]}}, {{psolution[2]}}, {{psolution[3]}}, {{psolution[4]}}, {{psolution[5]}}, {{psolution[6]}}, {{psolution[7]}}</li>
+                  </ul>
+              </td>
+              </tr>
+            </table>
+            
+          </div>
+          <!-- OLD:
+          <div class="row">
+            <table class="table">
+              <tr ng-repeat="(sid, val) in data.studentObj" ng-class="{'success':(val.valid && val.solved), 'warning': !val.solved}">
+                <td class="col-md-5" ><h3>{{val['Last Name']}} {{val['Given Name']}} - {{val['HRM']}}<span class="glyphicon glyphicon-ok" ng-show="val.valid"></span><span class="glyphicon glyphicon-thumbs-up" ng-show="val.solved"></span></h3>
+                  <br>{{sid}}
+                  <br>Requests:{{val.UniqueRequestsID}}</td>
+                  
+                <td class="col-md-7">
+                  <br><label ng-click="val.showSolutions = !val.showSolutions">Number of solutions:{{val.solutions.length}}<span class="glyphicon glyphicon-triangle-right" ng-show="!val.showSolutions"></span><span class="glyphicon glyphicon-triangle-bottom" ng-show="val.showSolutions"></span></label>
+                  <ul>
+                    <li class="small" ng-repeat="solution in val.solutions" ng-show="val.showSolutions">{{solution[10]}}: {{solution[1]}}, {{solution[2]}}, {{solution[3]}}, {{solution[4]}}, {{solution[5]}}, {{solution[6]}}, {{solution[7]}}</li>
+                  </ul>
+                  <br><label ng-click="val.showPartialSolutions = !val.showPartialSolutions">Number of partial solutions:{{val.partialSolutions.length}}<span class="glyphicon glyphicon-triangle-right" ng-show="!val.showPartialSolutions"></span><span class="glyphicon glyphicon-triangle-bottom" ng-show="val.showPartialSolutions"></span></label>
+                  <ul>
+                    <li class="small" ng-repeat="psolution in val.partialSolutions" ng-show="val.showPartialSolutions">{{psolution[10]}}: {{psolution[1]}}, {{psolution[2]}}, {{psolution[3]}}, {{psolution[4]}}, {{psolution[5]}}, {{psolution[6]}}, {{psolution[7]}}</li>
+                  </ul>
+              </td>
+              </tr>
+            </table>
+            
+          </div>-->
+        </div><!-- end analysis2 tab -->
+        
+        <!-- timetable tab -->
         <div class="col-md-12" ng-show="tabs.timetable">
+          <div class="row" ng-show="ttDirty">
+            <div class="col-md-12 danger">Changes have been made to timetable: <button class="btn btn-success" ng-click="saveTT()">Save and Reload</button><button class="btn btn-danger" ng-click="cancelTT()">Revert Timetable Changes</button></div>
+          </div>
           <div class="row">
             <table class="table">
               <!-- repeating row for timetableFormat -->
               <tr ng-repeat="(key, row) in data.timetableFormat">
                 <td>{{key}}</td>
                 <td ng-repeat="col in row">
-                  <div ng-repeat="course in data.tt" ng-if="(course[6] == key) && (course[3] == col)">{{course[8]}} {{course[4]}}({{course[5]}})
-                    Edit: <button ng-click="prepareThis($index)"/>
-                    
-                    
-                  </div>
+                  <div ng-repeat="course in data.tt" ng-if="(course[6] == key) && (course[3] == col)">
+                    <div class="row">
+                      <div class="col-sm-5" ng-click="setHighlight('course', course[1])" ng-class="{'bg-info': (ttHighlight.on &&(ttHighlight.course == course[1]))}">{{course[9]}}</div> 
+                      <div class="col-sm-2" ng-click="setHighlight('teacher', course[4])" ng-class="{'bg-primary': (ttHighlight.on && (ttHighlight.teacher == course[4]))}">{{course[4]}}</div>
+                      <div class="col-sm-3" ng-click="setHighlight('room', course[5])" ng-class="{'bg-success': (ttHighlight.on && (ttHighlight.room == course[5]))}">({{course[5]}})</div>
+                      <div class="col-sm-2"><span class="glyphicon glyphicon-edit" ng-click="prepareThis($index)"></span></div>
+                    </div>
+                  </div><!-- end repeat course in data.tt -->
                 </td>
               </tr>
               <!-- end repeating -->
             </table>
           </div>
-        </div><!-- end analysis tab -->
+           <!-- Timetable editing form -->
+          <div id="myModal" class="modal" ng-show="editClass.editing">
+          <div class="modal-content"  >       
+            <table class="table">
+              <tr><th><h3>Editing Class</h3></th><th></th></tr>
+              <tr><td>Course</td><td><input type="text" ng-model="editClass.update[1]" /></td></tr>
+              <tr><td>Section Code</td><td><input type="text" ng-model="editClass.update[2]" /></td></tr>
+              <tr><td>Block</td><td><input type="number" min="0" max="7" ng-model="editClass.update[6]" /></td></tr>
+              <tr><td>Staff</td><td><input type="text" ng-model="editClass.update[4]" /></td></tr>
+              <tr><td>Room</td><td><input type="text" ng-model="editClass.update[5]" /></td></tr>
+              <tr><td>Quota</td><td><input type="text" ng-model="editClass.update[7]" /></td></tr>           
+            </table>
+            <div>
+              <button ng-click="saveThisTT()">Save Changes</button><button ng-click="cancelTT()">Cancel</button>
+            </div>
+          </div>
+        </div><!-- end Timetable Editing form -->
+        </div><!-- end timetable tab -->
+
         
         </div>
       </div>
