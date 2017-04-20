@@ -28,7 +28,7 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
     $scope.maxClashes = 2;
     $scope.output = [];
     $scope.problems = [];
-    $scope.tabs = { timetable: false, allocate: true, analysis: false, quotas:false, clashes: false};
+    $scope.tabs = { timetable: false, allocate: true, analysis: false, quotas:false, clashes: false, 'No Solutions': false};
     $scope.createTimetableHRMList = "HRM11-1,HRM11-2,HRM11-3,HRM11-4,HRM10-1,HRM10-2,HRM10-3,HRM10-4,HRM09-1,HRM09-2,HRM09-3,HRM09-4,HRM08-D,HRM08-P,HRM08-T";
     $scope.toggleTabs = function (tab){
       for(var t in $scope.tabs){
@@ -67,9 +67,10 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
     function showData(x){
       $scope.data = x;
       $scope.data.resetTT = x.tt.slice(0);
+      $scope.data.timetableObj = ss2Obj($scope.data.tt,9,0);
       createTimtableView();
       populateCourseObj();
-      addTranscriptToStudents();
+      createCoursePairs();
       createMeetingMap(); //create a object to map each meetingID to list of classes using that meeting ID.
       revertResults();
       createAllCombosForStudents(false);
@@ -85,6 +86,16 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
       google.script.run.withSuccessHandler(showData).saveNewTT($scope.data.tt);
       $scope.ttDirty= false;
     }
+    
+    $scope.savePlayTT = function(){
+      $scope.data.timetableObj = ss2Obj($scope.data.tt,9,0);
+      clearResults();
+      populateCourseObj();
+      createMeetingMap();
+      createBlockDropdowns();//Create the drop down lists for each of the options.      
+      //createAllCombosForStudents(false);    
+      $scope.toggleTabs('allocate');
+    }
       
     function savedData(x){
       console.log("Saving done!");
@@ -95,7 +106,6 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
       var courseObj = $scope.data.courseObj;
       updateRow[3] = courseObj[updateRow[1]]['Course Level'];
       updateRow[9] = updateRow[1]+updateRow[2];
-      updateRow[8] = updateRow[1]+updateRow[2];
       console.log($scope.classEdit);
       $scope.data.tt[$scope.editClass.index] = $scope.editClass.update.slice(0);
       $scope.editClass.editing = false;
@@ -120,14 +130,21 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
     $scope.revertResultsBtn = function(){
       revertResults();
     }
+    
+
     function revertResults(){ //sets the data.results to data.savedResults which is the original data from the results spreadsheet
       $scope.data.results = $scope.data.savedResults.slice(1);
       updateClassCounts();
       findAllClashes();
     }
     
+    $scope.clearResultsBtn = function(){
+      clearResults();
+    }
+
     function clearResults(){
       $scope.data.results = [];
+      updateClassCounts();
     }
     
    
@@ -208,6 +225,8 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
      var results = $scope.data.results;
      var allSsData = $scope.data.studentObj;
      var subjectObj = $scope.data.timetableObj;
+     $scope.data.nosolutions =[];
+     $scope.data.solutions =[];  
      for (var hrm in HRMOrder){
        var thisSs = {};
        for (var row in allSsData){
@@ -224,14 +243,10 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
            }
            comboArray.push(sectionsArray);
          }
-         //console.log(comboArray);
-         //console.log(combos);
-         thisSs[s].allCombos = cartesian(comboArray);
-         //Go through and check for valid combos
+         thisSs[s].allCombos = cartesian(comboArray); //get all possible combinations
        }    
        console.log("done finding all combos... now finding valid ones");  
-       $scope.data.nosolutions =[];
-       $scope.data.solutions =[];  
+
        var solutions = [];
        for (var ss in thisSs){//for each student.
          thisSs[ss].solutions = [];
@@ -254,9 +269,9 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
            }
            thisSolution.push(thisSs[ss]['HRM']);
            thisSolution.push(thisSs[ss].valid);         
-           if (numClashes === 0 ){ 
+           if (numClashes === 0 ){ //If there are no clashes, add tis to solutions
              thisSs[ss].solutions.push(thisSolution);
-           } else if (numClashes <= $scope.maxClashes){
+           } else if (numClashes <= $scope.maxClashes){ //else if there are clashes, and there are fewer clashes than the threshold, add to students' partialSolution list
              thisSs[ss].partialSolutions.push(thisSolution);
            }
            
@@ -281,7 +296,7 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
        }
      }
      $scope.data.solutions = solutions;
-     console.log($scope);
+     //console.log($scope);
      initialiseChoicesOrdered(write);
    }
    
@@ -316,16 +331,18 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
          if(allSsData[row].HRM == HRMOrder[hrm].trim()) ssData[row] = allSsData[row];
        }
        for(var i in ssData){
+         console.log("Getting best combo for " + i +" (" + ssData[i].HRM+") "+ ssData[i]['Given Name'] + " " + ssData[i]['Last Name']);
          getBestCombo(ssData[i], write);
        }
      }
      findAllClashes();
-     console.log($scope);
+     //console.log($scope);
      $scope.toggleTabs('analysis');
    }
    
    function getBestCombo(ssDatai,write){
      var subjectObj = $scope.data.timetableObj;
+     var courseObj = $scope.data.courseObj;
      var i = ssDatai['Student ID'];
       updateClassCounts();
       //sconsole.log([i, ssDatai]);
@@ -337,6 +354,7 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
          var myChoice = ssDatai.partialSolutions.slice(0);
          var tempChoice = ssDatai.partialSolutions;
        } else {
+         console.log("No Solutions for " + i);
          return;
        }
        var scores = [];
@@ -350,13 +368,17 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
              thisscore -= 10;
            } else if (subjectObj.hasOwnProperty(thisClass)){ //If there is one choice for this block
              if(subjectObj[thisClass].meetingEnrolled < subjectObj[thisClass]['Room Quota']){
-               thisscore += 100;
+               var dept = courseObj[subjectObj[thisClass].COURSEID].Department;
+               thisscore += 80;
+               thisscore += parseInt(ssDatai.gradRemaining[dept]) * 5; //add the remaining credits required in this department as score.
                thisscore += parseInt(thisClass[3]);
+               thisscore += (subjectObj[thisClass]['Room Quota'] - subjectObj[thisClass].meetingEnrolled);
              } else {
-               thisscore -= 10;
+               //thisscore -= 50;
              }
            } else { //If there is a clash for this block
              var bestClash = findBestOption(thisClass, i);
+             //thisscore -=100;
              thisscore += bestClash.score;
              //myChoice[ch] = myChoice[ch].slice(0); //make a copy of the array as we are about to write the preferred course
              myChoice[ch][blk] = bestClash.courseSection; //update with best option
@@ -430,7 +452,9 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
    function addThisResult(sid,choice){
      var results = $scope.data.results;
      var solved = true;
-     for(var x=1; x<=7; x++) if(choice[x] == "") solved = false;
+     if(choice == undefined) {console.log(sid); return;}
+     for(var x=1; x<=7; x++) { if(choice[x] == "") solved = false;}
+     
      var thisResult = [sid, $scope.data.thisUser, "", $scope.data.studentObj[sid].HRM, solved, choice[1],choice[2],choice[3],choice[4],choice[5],choice[6],choice[7],"","","","",false,choice[11],choice[12],choice[13],choice[14],choice[15],choice[16],choice[17], solved];
      var found = false;
      var items = results.length;
@@ -439,12 +463,15 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
        if (results[i][0] == sid) {
          results[i] = thisResult;
          found = true;
+         console.log([i,results[i]]);
        }
        i++;
      }
      if (!found){
        results.push(thisResult);
+       console.log(results[results.length-1]);
      }
+
    }
    
    //this function takes a string of courses and returns the best course to be chosen by the student (and relevant score for consideration?)
@@ -460,16 +487,19 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
        var thisScore = 0;
        if(subjectsObj.hasOwnProperty(theCourses[c])){
          var thisClass = theCourses[c];
-         
          var dept = courseObj[subjectsObj[thisClass].COURSEID].Department;
          //console.log([thisClass, theCourses[c],dept]);
-         thisScore += parseInt(studentsObj[sid].gradRemaining[dept]); //add the remaining credits required in this department as score.
+         thisScore += parseInt(studentsObj[sid].gradRemaining[dept]) * 5; //add the remaining credits required in this department as score.
          thisScore += parseInt(subjectsObj[thisClass].Level);
          if(subjectsObj[thisClass].meetingEnrolled < subjectsObj[thisClass]['Room Quota']){   //Add score if class can be enrolled into (enough quota).  
-           thisScore += 100;
+           thisScore += 50;  
          } else {
-           thisScore -= 10;
-         }   
+           //thisScore -= 10;
+         }
+         if(subjectsObj[thisClass].COURSEID == 'MAC5C'){
+           thisScore += 50;
+         }
+     
          //console.log([thisScore, dept]);
          scores.push([c,thisScore,theCourses[c]]);
        }  
@@ -510,7 +540,7 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
          }
        }
      }
-     console.log(clashes);
+     //console.log(clashes);
    }
    
    function createTimtableView(){
@@ -548,25 +578,30 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
       console.log("timetable draw done!")
    }
    
+   
+   // populateCourseObj - adds class section info to courseObj.
    function populateCourseObj(){
      var myTT = $scope.data.timetableObj;
      var courseObj = $scope.data.courseObj;
+     //reset class sections in courseObj.
+     for (var crs in courseObj){
+       courseObj[crs].classSections = [];
+     }
+     
      var ssResults = $scope.data.studentObj;
      var invalidRequests = $scope.data.invalidRequests;
      //Add classes from timetable to course Object
      for (var cl in myTT){ //Loop through class section data
        if(courseObj.hasOwnProperty(myTT[cl].COURSEID)){ //If class is found in courseObj
-       var thisCourse = courseObj[myTT[cl].COURSEID];
-       if(!thisCourse.hasOwnProperty("classSections")) { //Create a class sections property and push the class to it
-         thisCourse["classSections"] = [myTT[cl]];
-       } else {
-         thisCourse["classSections"].push(myTT[cl]);
-       }
-       //Check and reconcile courseSearchID aliases with courseIDs (for MAC5C to come up as MAC51 and MAC52)
-       if(!courseObj.hasOwnProperty(myTT[cl].RequestSearchID)){//no listing under the requestSearchID so add it
-         courseObj[myTT[cl].RequestSearchID] = JSON.parse( JSON.stringify( courseObj[myTT[cl].COURSEID] ) );
-         courseObj[myTT[cl].RequestSearchID]["classSections"] = [myTT[cl]];
-       }
+         console.log(myTT[cl].COURSEID);
+         var thisCourse = courseObj[myTT[cl].COURSEID];
+         thisCourse["classSections"].push(myTT[cl]); //push the class to classSections property
+         
+         //Check and reconcile courseSearchID aliases with courseIDs (for MAC5C to come up as MAC51 and MAC52)
+         if(!courseObj.hasOwnProperty(myTT[cl].RequestSearchID)){//no listing under the requestSearchID so add it
+           courseObj[myTT[cl].RequestSearchID] = JSON.parse( JSON.stringify( courseObj[myTT[cl].COURSEID] ) );
+           courseObj[myTT[cl].RequestSearchID]["classSections"] = [myTT[cl]];
+         }
          
        }
      }     
@@ -587,7 +622,7 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
           }
         }
       }
-      for (var s in invalidRequests){
+      for (var s in invalidRequests){//add all invalid requests (students flagged for not having a valid request)
         var myChoices = invalidRequests[s].UniqueRequestsID.split(",");
         invalidRequests[s].choices = [];
         invalidRequests[s].valid = false;
@@ -604,6 +639,7 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
         }
         ssResults[s] = JSON.parse( JSON.stringify( invalidRequests[s] ) ); 
       }
+      addTranscriptToStudents();
    }
    
    function createBlockDropdowns(){
@@ -647,7 +683,26 @@ app.controller('myCtrl', function($scope, $filter, myService, $timeout, $q){
    }
    
    function createCoursePairs(){
-   
+     var studentObj = $scope.data.studentObj;
+     var courseObj = $scope.data.courseObj;
+     for (var c in courseObj){
+       courseObj[c].pairs = {};
+       for (var a in courseObj){
+         courseObj[c].pairs[a] = 0;
+       }
+     }
+     for (var s in studentObj){
+       var courses = studentObj[s].UniqueRequestsID.split(",");
+       for (var i = 0; i < courses.length -1 ; i++){
+         courseObj[courses[i]].pairs[courses[i]]++;
+         for (var j = i+1; j < courses.length; j++){
+           if(courseObj.hasOwnProperty(courses[i]) && courseObj.hasOwnProperty(courses[j])){ 
+             courseObj[courses[i]].pairs[courses[j]]++;
+             courseObj[courses[j]].pairs[courses[i]]++;
+           }  
+         }
+       }
+     }
    }
 
 
@@ -707,7 +762,21 @@ app.filter('orderByValueSs', function () {
     }
 });
 
-
+//function object from spreadsheet - converts a spreadsheet into objects where the contents in the ID column become the key.
+function ss2Obj(data, idCol, keysRow){
+  var result = {};
+  var keys = data[keysRow];
+  for(var i=keysRow+1; i < data.length; i++){
+    if (!result.hasOwnProperty(data[i][idCol])){
+      result[data[i][idCol]] = {};
+      for(var j in data[keysRow]){
+        result[data[i][idCol]][keys[j]] = data[i][j];
+        //Logger.log([data[i][idCol],i, j, keys[j], data[i][j]]);
+      }
+    }
+  }
+  return result;
+}
 
 /* OLD SCRIPTS
  $scope.runIt = function(){

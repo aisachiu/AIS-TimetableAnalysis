@@ -8,6 +8,7 @@
 var myListDocID = '0AkB30i6AUCFldDFfTkZwZmpOMThOOGZjZEZzVmNtNUE'; // Live Course List File Apr 2012-13 for 2013-2014 choices
 var myCoursePlannerDocId = '1S6UK3WKSo_y703TLL2Rt91Ia_che6mnOBM2o1LIxXb0'; //document with data on courses for upcoming year.
 
+var allowedUsers = ["achiu@ais.edu.hk", "mwing@ais.edu.hk"];
 
 var deptDefnSheet = 'Department Definition';
 var courseDefnSheet = 'Course Definition 2017-18';
@@ -60,7 +61,15 @@ function doGet() {
 //  var myDoc = 'Bootstrap';  
 //  var myDoc = 'index'; 
   //groupSsRequests() //Run an update to the main student timetable spreadsheet first! This gets live data from approvals and requests and summarises them.
-  var myDoc = 'index'
+  var hasAccess = false;
+  for(var usr in allowedUsers){
+    if(thisUser == allowedUsers[usr]) hasAccess = true;
+  }
+  if(hasAccess) {
+    var myDoc = 'index'
+  } else {
+    var myDoc = 'noAccess';
+  }
   return HtmlService.createTemplateFromFile(myDoc).evaluate().setSandboxMode(HtmlService.SandboxMode.IFRAME);
 }
 
@@ -78,7 +87,7 @@ function uridFromTimetable(){
   var rsSS = SpreadsheetApp.getActiveSpreadsheet();
  
   var tempTT = cpSS.getSheetByName(myClassSectionDefnSheet).getDataRange().getValues();
-  Logger.log(tempTT);
+ // Logger.log(tempTT);
   var myTT = ss2Obj(tempTT,9,0);
   var courseDefn = cpSS.getSheetByName(courseDefnSheet).getDataRange().getValues();
   var fourYears = [{year: 9, prop:"G9"},{year: 10, prop:"G10"}, {year: 11, prop:"G11"},{year: 12, prop:"G12"}]; //The 4 years in the 4-year plan and the column in courseDefn that contains info about whether course is in that yeargroup's plan.
@@ -112,9 +121,9 @@ function uridFromTimetable(){
 
   var transcripts = SpreadsheetApp.openById(myListDocID).getSheetByName(myCreditsSheetName).getDataRange().getValues();
   
-  var results = SpreadsheetApp.openById(mySurveyCollector).getSheetByName(mySurveySheetName).getDataRange().getValues();
+  var results = textifyDates(SpreadsheetApp.openById(mySurveyCollector).getSheetByName(mySurveySheetName).getDataRange().getValues());
   
-  return {courseObj: courseObj, studentObj: ssResults, timetableObj: myTT, fourYearPlan: fourYearPlan, tt: tempTT, invalidRequests: invalidRequests, thisUser: thisUser, transcripts: transcripts, savedResults: results};
+  return {courseObj: courseObj, studentObj: ssResults, fourYearPlan: fourYearPlan, tt: tempTT, invalidRequests: invalidRequests, thisUser: thisUser, transcripts: transcripts, savedResults: results};
   
 }
 
@@ -591,4 +600,62 @@ function tryReduce(){
   Logger.log(j);
   
 
+}
+
+//-----
+// function textifyDates(myArr) - converts all dates into text format - assumes a 2D array as an input, returns the array.
+//-----
+function textifyDates(myArr){
+  
+  
+  for(var r=0; r < myArr.length; r++){
+    for(var c=0; c < myArr[r].length; c++){
+      if (Object.prototype.toString.call(myArr[r][c]) === '[object Date]'){
+        try {           
+          //myArr[r] = myArr[r].toString();
+          myArr[r] = Utilities.formatDate(myArr[r], "GMT+08:00", "dd-MMM-yyyy")
+        } 
+        catch(err) { myArr[r][c] = err};
+      }
+    }
+  }
+  return myArr;
+}
+
+
+// function makeDraftChoiceFromRequests() - Makes a spreadsheet like the old draft choices based off of the students' initial course requests (for show on the course selection principal approval program, April 2017)
+function makeDraftChoiceFromRequests(){
+  var mySheet = SpreadsheetApp.getActiveSpreadsheet();
+  var myVReqs = mySheet.getSheetByName("Valid Requests").getDataRange().getValues();
+  var myPReqs = mySheet.getSheetByName("Problem Requests").getDataRange().getValues();
+  var output = [];
+  function getChoices(urid) {
+    var c = [];
+    for (var i = 0; i <= 6; i++){
+      if(urid[i] != undefined){
+        c.push(urid[i])
+      } else {
+        c.push("");
+      }
+    }
+    return c;
+  }
+  
+  for(var r = 1; r < myVReqs.length; r++){
+    var mr = myVReqs[r];
+    var urid = mr[6].split(",");
+    var c = getChoices(urid);
+    output.push([mr[0], mr[1], "", mr[2], false, c[0], c[1], c[2], c[3], c[4], c[5], c[6],"",false,false]);
+  }
+  
+  for(var p =1; p < myPReqs.length; p++) {
+    var mr = myPReqs[p];
+    var urid = mr[6].split(",");
+    var c = getChoices(urid);
+    output.push([mr[0], mr[1], "", mr[2], false, c[0], c[1], c[2], c[3], c[4], c[5], c[6], mr[17], mr[18],mr[19]]);
+  }
+  
+  mySheet.insertSheet("Draft Results").getRange(1, 1, output.length, output[0].length).setValues(output);
+
+//STUDENT	Editor's Email	TimeDate	HRM	AdvisorChecked	Class1	Class2	Class3	Class4	Class5	Class6	Class7	AdventureWeek	AdventureWaitList	Approval Change	Approval Date	PrincipalChecked			
 }

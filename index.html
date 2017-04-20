@@ -37,11 +37,11 @@
         <div class="col-md-6">
           <p><button ng-click="showScope();">Show Scope in Console</button></p> 
           <p><button ng-click="saveSolutions();">Save Combos to Sheet</button></p>
-          <p><button ng-Click="saveResults();">Save Results</button> | <button ng-Click="revertResultsBtn();">Revert Results</button></p>
+          <p><button ng-Click="saveResults();">Save Results</button> | <button ng-Click="revertResultsBtn();">Revert Results</button> | <button ng-Click="clearResultsBtn();">Clear Results</button></p>
         </div>
         <div class="col-md-6">
           <table class="table table-striped">
-            <tr><th>Cat</th><th>Solved></th><th>Clash / Incomplete</th><th>Total</th></tr>
+            <tr><th>Cat</th><th>Solved</th><th>Clash / Incomplete</th><th>Total</th></tr>
             <tr ng-repeat="(key, val) in dashboard">
               <td>{{key}}</td>
               <td>{{val.solved}} ({{(val.solved / (val.solved+val.clash) *100).toFixed(1)}}%)</td>
@@ -77,7 +77,7 @@
         </div>
         <div class="col-md-12" ng-show="tabs.clashes">
           <div class="row" >
-            <label class="col-md-4 label" ng-repeat="(key,val) in data.resultsClash" ng-class="{'label-default': (val <= 1), 'label-info': (val >1)}">{{key}}: {{val}}</label>
+            <label class="col-md-3 label" ng-repeat="(key,val) in data.resultsClash" ng-class="{'label-default': (val <= 1), 'label-info': (val >1)}">{{key}}: {{val}}</label>
           </div>
         </div>
         <div class="col-md-12" ng-show="tabs.analysis">
@@ -120,34 +120,12 @@
             </table>
             
           </div>
-          <!-- OLD:
-          <div class="row">
-            <table class="table">
-              <tr ng-repeat="(sid, val) in data.studentObj" ng-class="{'success':(val.valid && val.solved), 'warning': !val.solved}">
-                <td class="col-md-5" ><h3>{{val['Last Name']}} {{val['Given Name']}} - {{val['HRM']}}<span class="glyphicon glyphicon-ok" ng-show="val.valid"></span><span class="glyphicon glyphicon-thumbs-up" ng-show="val.solved"></span></h3>
-                  <br>{{sid}}
-                  <br>Requests:{{val.UniqueRequestsID}}</td>
-                  
-                <td class="col-md-7">
-                  <br><label ng-click="val.showSolutions = !val.showSolutions">Number of solutions:{{val.solutions.length}}<span class="glyphicon glyphicon-triangle-right" ng-show="!val.showSolutions"></span><span class="glyphicon glyphicon-triangle-bottom" ng-show="val.showSolutions"></span></label>
-                  <ul>
-                    <li class="small" ng-repeat="solution in val.solutions" ng-show="val.showSolutions">{{solution[10]}}: {{solution[1]}}, {{solution[2]}}, {{solution[3]}}, {{solution[4]}}, {{solution[5]}}, {{solution[6]}}, {{solution[7]}}</li>
-                  </ul>
-                  <br><label ng-click="val.showPartialSolutions = !val.showPartialSolutions">Number of partial solutions:{{val.partialSolutions.length}}<span class="glyphicon glyphicon-triangle-right" ng-show="!val.showPartialSolutions"></span><span class="glyphicon glyphicon-triangle-bottom" ng-show="val.showPartialSolutions"></span></label>
-                  <ul>
-                    <li class="small" ng-repeat="psolution in val.partialSolutions" ng-show="val.showPartialSolutions">{{psolution[10]}}: {{psolution[1]}}, {{psolution[2]}}, {{psolution[3]}}, {{psolution[4]}}, {{psolution[5]}}, {{psolution[6]}}, {{psolution[7]}}</li>
-                  </ul>
-              </td>
-              </tr>
-            </table>
-            
-          </div>-->
         </div><!-- end analysis2 tab -->
         
         <!-- timetable tab -->
         <div class="col-md-12" ng-show="tabs.timetable">
           <div class="row" ng-show="ttDirty">
-            <div class="col-md-12 danger">Changes have been made to timetable: <button class="btn btn-success" ng-click="saveTT()">Save and Reload</button><button class="btn btn-danger" ng-click="cancelTT()">Revert Timetable Changes</button></div>
+            <div class="col-md-12 danger">Changes have been made to timetable: <button class="btn btn-success" ng-click="savePlayTT()">Save and Play</button><button class="btn btn-success" ng-click="saveTT()">Save to Spreadsheet</button><button class="btn btn-danger" ng-click="cancelTT()">Revert Timetable Changes</button></div>
           </div>
           <div class="row">
             <table class="table">
@@ -157,10 +135,15 @@
                 <td ng-repeat="col in row">
                   <div ng-repeat="course in data.tt" ng-if="(course[6] == key) && (course[3] == col)">
                     <div class="row">
-                      <div class="col-sm-5" ng-click="setHighlight('course', course[1])" ng-class="{'bg-info': (ttHighlight.on &&(ttHighlight.course == course[1]))}">{{course[9]}}</div> 
-                      <div class="col-sm-2" ng-click="setHighlight('teacher', course[4])" ng-class="{'bg-primary': (ttHighlight.on && (ttHighlight.teacher == course[4]))}">{{course[4]}}</div>
-                      <div class="col-sm-3" ng-click="setHighlight('room', course[5])" ng-class="{'bg-success': (ttHighlight.on && (ttHighlight.room == course[5]))}">({{course[5]}})</div>
-                      <div class="col-sm-2"><span class="glyphicon glyphicon-edit" ng-click="prepareThis($index)"></span></div>
+                      <div class="col-sm-7 lesspadding" ng-click="setHighlight('course', course[8])">
+                        <span class="glyphicon glyphicon-edit small" ng-click="prepareThis($index)"></span><span ng-class="{'bg-primary': (ttHighlight.on &&(ttHighlight.course == course[8]))}">{{course[9]}}</span>
+                        <label class="small label label-default" ng-class="{'label-success': (data.courseObj[ttHighlight.course].pairs[course[8]] == 0)}" ng-show="ttHighlight.course != null"> {{data.courseObj[ttHighlight.course].pairs[course[8]]}}</label>
+                        <label class="small label label-info" ng-class="{'label-danger': (data.courseObj[course[1]].classSections.length <= 1)}" ng-show="ttHighlight.course != null"> {{data.courseObj[course[1]].classSections.length}}</label>
+                        </div> 
+                      <div class="col-sm-5 small lesspadding">
+                        <span ng-click="setHighlight('teacher', course[4])" ng-class="{'bg-primary': (ttHighlight.on && (ttHighlight.teacher == course[4]))}">{{course[4]}}</span>
+                        <span ng-click="setHighlight('room', course[5])" ng-class="{'bg-primary': (ttHighlight.on && (ttHighlight.room == course[5]))}">({{course[5]}})</span></div>
+                      <!--<div class="col-sm-1"></div>-->
                     </div>
                   </div><!-- end repeat course in data.tt -->
                 </td>
@@ -174,6 +157,8 @@
             <table class="table">
               <tr><th><h3>Editing Class</h3></th><th></th></tr>
               <tr><td>Course</td><td><input type="text" ng-model="editClass.update[1]" /></td></tr>
+              <tr><td>Course Lookup</td><td><input type="text" ng-model="editClass.update[8]" /></td></tr>
+              <tr><td>Meeting ID</td><td><input type="text" ng-model="editClass.update[0]" /></td></tr>
               <tr><td>Section Code</td><td><input type="text" ng-model="editClass.update[2]" /></td></tr>
               <tr><td>Block</td><td><input type="number" min="0" max="7" ng-model="editClass.update[6]" /></td></tr>
               <tr><td>Staff</td><td><input type="text" ng-model="editClass.update[4]" /></td></tr>
@@ -186,6 +171,19 @@
           </div>
         </div><!-- end Timetable Editing form -->
         </div><!-- end timetable tab -->
+        
+        <div class="col-md-12" ng-show="tabs['No Solutions']">
+          <div>Total:{{data.nosolutions.length}}</div>
+          <table>
+            <tr>
+              <th>Student</th><th>request</th>
+            </tr>
+            <tr ng-repeat="ss in data.nosolutions">
+              <td>{{ss[2]}} {{ss[1]}} ({{ss[3]}}) <span class="small">{{ss[0]}}</span></td>
+              <td>{{data.studentObj[ss[0]].UniqueRequestsID}}</td>
+            </tr>
+          </table>
+        </div>
 
         
         </div>
